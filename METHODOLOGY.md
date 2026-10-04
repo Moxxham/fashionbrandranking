@@ -89,6 +89,19 @@ Index = 60 + c·(B − 60)         confidence shrinkage, c ∈ [0.5, 1]
 - Each brand also gets a **discipline rank** (within its primary discipline) and a **catalogue percentile**.
 - Any dimension can be used as a sort key in the UI. The global rank badge always reflects the composite.
 
+### 2.4 Buy-at threshold
+
+Each brand gets a **buy-at** figure: the discount off RRP at which it becomes an instant buy. It is a discount rather than a price because one brand's tee and jacket share no price, but each carries an RRP. Off-price stores such as TK Maxx print the RRP on the ticket next to their own price.
+
+```
+buy-at = 60 − 0.9·(Index − 60) − 0.4·(Value − 60)     rounded to the nearest 5%, held within 10–70%
+```
+
+- **Quality lowers the bar.** Each index point above the prior takes 0.9 points off the discount needed.
+- **Poor value raises it.** Value Integrity counts again here because it measures how fair the RRP is. A brand that is overpriced at full retail needs a deeper cut.
+- **Typical results:** Patagonia and Schott NYC 35%, Barbour and Levi's 40%, Fred Perry 45%, Tommy Hilfiger 50%, Moncler and Versace 55%, H&M 60%, Philipp Plein 70%. Across the catalogue most brands fall between 40% and 60%.
+- It is derived in the browser like the composite, so it follows any change to scores or weights. Constants live in `BUY_AT` in `src/App.tsx`.
+
 ---
 
 ## 3. Data schema
@@ -134,5 +147,6 @@ interface Brand {
 
 - Curated scores are **editorial assessments**. They synthesise construction analysis, sourcing, ownership history and enthusiast consensus, and they are not audits or lab tests.
 - Brands drift: ownership changes, factories move and quality slides. Every record carries `updatedAt`.
-- **Where to buy.** `stockists` flags (curated in `scripts/stockists.mjs`) record retailers a brand regularly turns up at, such as TK Maxx UK. They are editorial notes, not stock checks. The app turns each flag into a live retailer search, and offers open-market searches (Google Shopping, eBay UK, Vinted) for every brand.
+- **Buy-at is a threshold, not a forecast.** It says when to stop deliberating, not what a brand will be discounted to.
+- **Where to look.** `stockists` flags (curated in `scripts/stockists.mjs`) record retailers a brand regularly turns up at, such as TK Maxx UK. They are editorial notes, not stock checks. The app turns each flag into a live retailer search, and offers open-market searches (Google Shopping, eBay UK, Vinted) for every brand.
 - Every record is a real brand. Where a founding year or city is not confidently known it is left `null` rather than guessed, and lesser-documented brands carry lower confidence so their composites shrink toward the prior.

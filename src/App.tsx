@@ -143,6 +143,15 @@ const BLEND = 0.75; // share of the weighted arithmetic mean; remainder is the w
 const PRIOR = 60; // "competent, unremarkable" baseline that low-evidence scores shrink towards
 const MIN_CONFIDENCE = 0.5;
 
+/**
+ * Buy-at threshold: the discount off RRP at which a brand becomes an instant
+ * buy. It is relative to the ticket's RRP, so one number holds for a brand's
+ * tee and its jacket alike. Better brands justify a smaller discount; brands
+ * that are poor value at full price need a deeper one.
+ *   d = BASE − QUALITY·(composite − PRIOR) − VALUE·(value − PRIOR), clamped, nearest STEP
+ */
+const BUY_AT = { base: 60, quality: 0.9, value: 0.4, min: 10, max: 70, step: 5 } as const;
+
 const CATEGORY_IDS = [
   'tailoring',
   'shirting',
@@ -294,6 +303,8 @@ interface SearchIndex {
 }
 
 interface RankedBrand extends Brand {
+  /** Discount off RRP (%) at which the brand is an instant buy — see BUY_AT. */
+  buyAt: number;
   arithmetic: number;
   geometric: number;
   balanced: number;
@@ -332,7 +343,12 @@ function scoreBrand(scores: Record<DimensionId, number>, confidence: number, wei
   const composite = PRIOR + c * (balanced - PRIOR);
   const contributions = {} as Record<DimensionId, number>;
   for (const d of DIMENSION_IDS) contributions[d] = round1((weights[d] * scores[d]) / wsum);
-  return { arithmetic: round1(arithmetic), geometric: round1(geometric), balanced: round1(balanced), composite: round1(composite), contributions };
+  return { arithmetic: round1(arithmetic), geometric: round1(geometric), balanced: round1(balanced), composite: round1(composite), contributions, buyAt: buyAtDiscount(round1(composite), scores.value) };
+}
+
+function buyAtDiscount(composite: number, value: number): number {
+  const d = BUY_AT.base - BUY_AT.quality * (composite - PRIOR) - BUY_AT.value * (value - PRIOR);
+  return clamp(Math.round(d / BUY_AT.step) * BUY_AT.step, BUY_AT.min, BUY_AT.max);
 }
 
 /** Composite descending; ties → construction, material, name. Competition ranking ("1-2-2-4"). */
@@ -907,34 +923,29 @@ function ProfileHover({ scores, highlight, onOpen }: { scores: Record<DimensionI
   );
 }
 
-/** Primary place to buy: a flagged retailer if the brand has one, otherwise an open-market price comparison. */
-function buyLink(b: Brand) {
-  const q = searchTerm(b.name);
-  const r = b.stockists?.length ? RETAILER_BY_ID[b.stockists[0]] : null;
-  return r
-    ? { flagged: true, name: r.name, note: 'Often stocked', href: r.search(q), title: `Search ${r.name} for ${b.name}` }
-    : { flagged: false, name: 'Search stockists', note: '', href: SHOP_SEARCHES[0].url(q), title: `Compare stockists of ${b.name}` };
-}
+const buyAtTitle = (b: RankedBrand) => `Instant buy at ${b.buyAt}% off RRP or more`;
 
-function BuyAt({ brand }: { brand: Brand }) {
-  const l = buyLink(brand);
+/** Buy-at threshold, plus a search link when the brand is flagged at a retailer. */
+function BuyAt({ brand: b, align = 'left' }: { brand: RankedBrand; align?: 'left' | 'right' }) {
+  const r = b.stockists?.length ? RETAILER_BY_ID[b.stockists[0]] : null;
   return (
-    <div className="min-w-0">
-      <a
-        href={l.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        title={`${l.title} (opens in a new tab)`}
-        className={cx(
-          'relative z-10 inline-flex max-w-full items-center gap-1 underline decoration-1 underline-offset-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
-          l.flagged ? 'text-[13px] font-medium text-ink decoration-rule-strong hover:decoration-ink' : 'text-[12px] text-muted decoration-rule hover:text-ink hover:decoration-ink',
-        )}
-      >
-        <span className="truncate">{l.name}</span>
-        <ArrowUpRight size={13} strokeWidth={1.8} className="shrink-0" aria-hidden />
-      </a>
-      {l.note && <div className="truncate text-[11.5px] text-muted">{l.note}</div>}
+    <div className={cx('min-w-0', align === 'right' && 'text-right')}>
+      <div className="tnum whitespace-nowrap" title={buyAtTitle(b)}>
+        <span className="font-serif text-[22px] leading-none">{b.buyAt}%</span> <span className="text-[11px] text-muted">off</span>
+      </div>
+      {r && (
+        <a
+          href={r.search(searchTerm(b.name))}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title={`Search ${r.name} for ${b.name} (opens in a new tab)`}
+          className="relative z-10 mt-0.5 inline-flex items-center gap-0.5 text-[11.5px] text-ink-2 underline decoration-rule-strong underline-offset-2 hover:text-ink hover:decoration-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+        >
+          {r.name}
+          <ArrowUpRight size={11} strokeWidth={1.8} aria-hidden />
+        </a>
+      )}
     </div>
   );
 }
@@ -1307,13 +1318,13 @@ interface ItemProps {
 /**
  * One column template shared by the header and every row, so headers can't
  * drift from their cells. Columns appear as width allows:
- *   base  rank · brand · score · save
- *   md    + discipline/tier · profile
- *   lg    + buy at
+ *   base  rank · brand · score (buy-at beneath) · save
+ *   md    + discipline/tier · buy at
+ *   lg    + profile
  *   xl    + signature
  */
 const LEADER_COLS =
-  'grid-cols-[40px_minmax(0,1fr)_auto_36px] md:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_76px_40px] lg:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_132px_76px_40px] xl:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_minmax(0,1.5fr)_132px_76px_40px]';
+  'grid-cols-[40px_minmax(0,1fr)_auto_36px] md:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_96px_76px_40px] lg:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_96px_76px_40px] xl:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_minmax(0,1.5fr)_96px_76px_40px]';
 
 const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, onToggle }: ItemProps) {
   const dim = (DIMENSION_IDS as readonly string[]).includes(sortKey) ? (sortKey as DimensionId) : undefined;
@@ -1330,12 +1341,6 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
           >
             {b.name}
           </button>
-          {/* below lg the Buy at column is hidden, so flagged stockists surface as a tag */}
-          {b.stockists?.map((r) => (
-            <span key={r} className="shrink-0 border border-rule px-1 text-[10px] leading-4 whitespace-nowrap text-muted lg:hidden">
-              {RETAILER_BY_ID[r].name}
-            </span>
-          ))}
         </div>
         <div className="truncate text-[12px] text-muted">
           {originLine(b)}
@@ -1347,14 +1352,14 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
         <div className="mb-1 truncate text-[13px] text-ink-2">{CATEGORY_BY_ID[b.category].label}</div>
         <TierMark tier={b.tier} />
       </div>
-      <div className="hidden md:block">
+      <div className="hidden lg:block">
         <ProfileHover scores={b.scores} highlight={dim} onOpen={open} />
       </div>
       <div className="hidden min-w-0 xl:block">
         <div className="truncate text-[13.5px] text-ink-2">{b.signatures[0]?.name ?? '—'}</div>
         {b.signatures.length > 1 && <div className="truncate text-[11.5px] text-muted">+ {b.signatures.slice(1).map((s) => s.name).join(', ')}</div>}
       </div>
-      <div className="hidden lg:block">
+      <div className="hidden md:block">
         <BuyAt brand={b} />
       </div>
       <div className="text-right">
@@ -1364,7 +1369,13 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
             {DIM_BY_ID[dim].abbr} {b.scores[dim]}
           </div>
         ) : (
-          <div className="tnum mt-1 text-[11px] text-muted">top {Math.max(1, 100 - b.percentile)}%</div>
+          <>
+            {/* phones have no Buy at column, so the threshold takes the percentile's place */}
+            <div className="tnum mt-1 text-[11px] whitespace-nowrap text-ink-2 md:hidden" title={buyAtTitle(b)}>
+              buy at {b.buyAt}% off
+            </div>
+            <div className="tnum mt-1 hidden text-[11px] text-muted md:block">top {Math.max(1, 100 - b.percentile)}%</div>
+          </>
         )}
       </div>
       <SaveButton saved={saved} onToggle={() => onToggle(b.id)} name={b.name} className="justify-self-end" />
@@ -1385,11 +1396,13 @@ function LeaderHeader() {
       <span>Rank</span>
       <span>Brand</span>
       <span>Discipline · Tier</span>
-      <span className="inline-flex items-center gap-1" title="Eight dimension scores, in methodology order. Hover a profile for the values.">
+      <span className="hidden items-center gap-1 lg:inline-flex" title="Eight dimension scores, in methodology order. Hover a profile for the values.">
         Profile <Info size={11} strokeWidth={2} aria-hidden />
       </span>
       <span className="hidden xl:block">Signature</span>
-      <span className="hidden lg:block">Buy at</span>
+      <span className="inline-flex items-center gap-1" title="The discount off RRP at which this brand is an instant buy. Derived from its index score and value integrity; see Methodology.">
+        Buy at <Info size={11} strokeWidth={2} aria-hidden />
+      </span>
       <span className="text-right">Score</span>
       <span />
     </div>
@@ -1458,7 +1471,8 @@ const BrandCard = memo(function BrandCard({ brand: b, saved, sortKey, onOpen, on
           )}
         </p>
         <div className="shrink-0 text-right">
-          <BuyAt brand={b} />
+          <div className="text-[10.5px] tracking-[0.14em] text-muted uppercase">Buy at</div>
+          <BuyAt brand={b} align="right" />
         </div>
       </div>
     </article>
@@ -1551,7 +1565,9 @@ function DimensionBars({ brand, medians, weights }: { brand: RankedBrand; median
   );
 }
 
-function WhereToBuy({ brand: b }: { brand: Brand }) {
+const gbp = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 });
+
+function BuyAtSection({ brand: b }: { brand: RankedBrand }) {
   const q = searchTerm(b.name);
   const flagged = new Set(b.stockists ?? []);
   const links = [
@@ -1567,7 +1583,30 @@ function WhereToBuy({ brand: b }: { brand: Brand }) {
   ];
   return (
     <section className="mt-10">
-      <h3 className="mb-3 font-serif text-[26px]">Where to buy</h3>
+      <h3 className="mb-3 font-serif text-[26px]">Buy at</h3>
+      <div className="grid gap-5 border border-ink p-5 sm:grid-cols-[auto_1fr] sm:items-center">
+        <div>
+          <div className="tnum font-serif text-[56px] leading-[0.85]">{b.buyAt}%</div>
+          <div className="mt-1 text-[12px] text-muted">off RRP or more</div>
+        </div>
+        <div className="text-[13px] leading-relaxed text-ink-2">
+          <p>
+            An instant buy once the ticket shows at least this discount off the RRP, for anything from {b.name}.
+          </p>
+          <ul className="tnum mt-2 flex flex-wrap gap-x-5 text-[12px] text-muted">
+            {[50, 100, 250].map((rrp) => (
+              <li key={rrp}>
+                RRP {gbp.format(rrp)} → <span className="text-ink">{gbp.format(Math.floor(rrp * (1 - b.buyAt / 100)))}</span> or less
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11.5px] text-muted">
+            Set by its index score ({b.composite.toFixed(1)}) and value integrity ({b.scores.value}): the better the brand, the smaller the discount it needs.
+          </p>
+        </div>
+      </div>
+
+      <h4 className="mt-6 mb-2 text-[10.5px] font-semibold tracking-[0.18em] text-muted uppercase">Where to look</h4>
       <ul className="divide-y divide-rule border-y border-rule">
         {links.map((l) => (
           <li key={l.id}>
@@ -1740,7 +1779,7 @@ function BrandDrawer({
             </section>
           )}
 
-          <WhereToBuy brand={b} />
+          <BuyAtSection brand={b} />
 
           <section className="mt-10">
             <h3 className="mb-3 font-serif text-[26px]">Fact sheet</h3>
@@ -2028,11 +2067,35 @@ function MethodologyView({ weights }: { weights: Weights }) {
         ))}
       </dl>
 
-      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">5 · Reading the scores honestly</h3>
+      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">5 · The buy-at threshold</h3>
+      <p className="mt-4 text-[13.5px] leading-relaxed text-ink-2">
+        Every brand carries a <strong className="font-semibold text-ink">buy-at</strong> figure: the discount off RRP at which it becomes an instant buy. It is a discount rather than a price because a brand’s tee and its jacket share no price, but they do share a ticket RRP — which off-price stores such as TK Maxx print next to their own price.
+      </p>
+      <div className="mt-4 overflow-x-auto border border-rule bg-panel p-5 font-mono text-[12.5px] leading-7">
+        <div>
+          buy-at = {BUY_AT.base} − {BUY_AT.quality}·(Index − {PRIOR}) − {BUY_AT.value}·(Value − {PRIOR})
+        </div>
+        <div>
+          rounded to the nearest {BUY_AT.step}%, held within {BUY_AT.min}–{BUY_AT.max}%
+        </div>
+      </div>
+      <ul className="mt-4 space-y-3 text-[13.5px] leading-relaxed text-ink-2">
+        <li>
+          <strong className="font-semibold text-ink">Quality lowers the bar.</strong> Each index point above {PRIOR} takes {BUY_AT.quality} points off the discount needed: a top-decile maker is worth having at a modest saving.
+        </li>
+        <li>
+          <strong className="font-semibold text-ink">Poor value raises it.</strong> Value Integrity counts again here because it measures how fair the RRP is. Brands that are overpriced at full retail need a deeper cut before they are a buy.
+        </li>
+        <li>
+          <strong className="font-semibold text-ink">A threshold, not a forecast.</strong> It says when to stop deliberating, not what a brand will be discounted to. Check fit and condition as you would at any price.
+        </li>
+      </ul>
+
+      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">6 · Reading the scores honestly</h3>
       <ul className="mt-4 space-y-3 text-[13.5px] leading-relaxed text-ink-2">
         <li>Curated scores are editorial assessments synthesised from construction analysis, materials sourcing, ownership history and enthusiast consensus. They are informed opinion, not laboratory measurements or audits.</li>
         <li>Brands change — ownership, factories and quality drift. Every record carries an updated date; treat older assessments with proportionate caution.</li>
-        <li>“Buy at” links open a live search on the retailer’s site. An “Often at TK Maxx” flag is an editorial note that the brand turns up there regularly, not a stock check: off-price retailers buy opportunistically and the rails change daily.</li>
+        <li>Retailer links open a live search on the retailer’s site. An “Often at TK Maxx” flag is an editorial note that the brand turns up there regularly, not a stock check: off-price retailers buy opportunistically and the rails change daily.</li>
       </ul>
     </article>
   );
