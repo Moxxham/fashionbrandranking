@@ -23,11 +23,14 @@ import type { ReactNode } from 'react';
 import {
   ArrowDown,
   ArrowUp,
+  ArrowUpRight,
   Bookmark,
   BookmarkCheck,
   Check,
+  ChevronDown,
   Copy,
   Database,
+  Info,
   LayoutGrid,
   LayoutList,
   RotateCcw,
@@ -204,6 +207,38 @@ const TIERS: TierDef[] = [
 const TIER_BY_ID = Object.fromEntries(TIERS.map((t) => [t.id, t])) as Record<TierId, TierDef>;
 const TIER_BAND_NOTE = 'Bands are indexed to the brand’s core shirt-equivalent garment at full retail (USD).';
 
+/**
+ * Where to buy. A brand's `stockists` are editorial flags (scripts/stockists.mjs)
+ * for retailers it regularly turns up at; every link opens a live search on
+ * the retailer's site rather than claiming a piece is in stock.
+ */
+const RETAILER_IDS = ['tkmaxx'] as const;
+type RetailerId = (typeof RETAILER_IDS)[number];
+
+interface RetailerDef {
+  id: RetailerId;
+  name: string;
+  /** Short qualifier shown under the link. */
+  note: string;
+  search: (brand: string) => string;
+}
+
+const RETAILERS: RetailerDef[] = [
+  // SAP Commerce storefront: /search?text= is its standard search route.
+  { id: 'tkmaxx', name: 'TK Maxx', note: 'Off-price · stock changes daily', search: (q) => `https://www.tkmaxx.com/uk/en/search?text=${encodeURIComponent(q)}` },
+];
+const RETAILER_BY_ID = Object.fromEntries(RETAILERS.map((r) => [r.id, r])) as Record<RetailerId, RetailerDef>;
+
+/** Open-market searches offered for every brand, flagged or not. */
+const SHOP_SEARCHES: { id: string; name: string; note: string; url: (brand: string) => string }[] = [
+  { id: 'shopping', name: 'Google Shopping', note: 'Compare current stockists and prices', url: (q) => `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(`${q} mens`)}` },
+  { id: 'ebay', name: 'eBay UK', note: 'New and pre-owned', url: (q) => `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(q)}` },
+  { id: 'vinted', name: 'Vinted', note: 'Pre-owned', url: (q) => `https://www.vinted.co.uk/catalog?search_text=${encodeURIComponent(q)}` },
+];
+
+/** Retailer search boxes match a plain apostrophe more reliably than a typographic one. */
+const searchTerm = (name: string) => name.replace(/[‘’]/g, "'");
+
 /* ================================================================== */
 /* §2  DATA SCHEMA                                                     */
 /* ================================================================== */
@@ -234,6 +269,8 @@ interface Brand {
   editorial: { summary: string; strengths: string[]; caveats: string[] };
   tags?: string[];
   website?: string;
+  /** Retailers the brand regularly turns up at (editorial flag, not live stock). */
+  stockists?: RetailerId[];
   status?: 'active' | 'hiatus' | 'defunct';
   provenance: Provenance;
   updatedAt?: string;
@@ -445,6 +482,7 @@ function sanitizeBrand(raw: unknown): Brand | null {
     editorial: { summary: str(editorial.summary) ?? '', strengths: strArr(editorial.strengths), caveats: strArr(editorial.caveats) },
     tags: strArr(raw.tags).map((t) => t.toLowerCase()),
     website: str(raw.website),
+    stockists: strArr(raw.stockists).filter((r): r is RetailerId => (RETAILER_IDS as readonly string[]).includes(r)),
     status: raw.status === 'hiatus' || raw.status === 'defunct' ? raw.status : 'active',
     provenance,
     updatedAt: str(raw.updatedAt),
@@ -543,6 +581,7 @@ function buildSearchIndex(b: Brand): SearchIndex {
       ...(b.subcategories ?? []).map((c) => CATEGORY_BY_ID[c].label),
       TIER_BY_ID[b.tier].label,
       b.ownership?.parent ?? '',
+      ...(b.stockists ?? []).map((r) => RETAILER_BY_ID[r].name),
     ].join(' '),
   );
   return {
@@ -724,12 +763,17 @@ interface Filters {
   tiers: TierId[];
   country: string;
   minScore: number;
+  /** Retailer id, or '' for any. */
+  stockist: RetailerId | '';
   savedOnly: boolean;
   sort: SortKey;
   dir: SortDir;
 }
 
-const DEFAULT_FILTERS: Filters = { query: '', categories: [], tiers: [], country: '', minScore: 0, savedOnly: false, sort: 'composite', dir: 'desc' };
+const DEFAULT_FILTERS: Filters = { query: '', categories: [], tiers: [], country: '', minScore: 0, stockist: '', savedOnly: false, sort: 'composite', dir: 'desc' };
+
+/** Thresholds offered by the minimum-score filter (catalogue median sits around 67). */
+const MIN_SCORE_OPTIONS = [0, 60, 65, 70, 75, 80];
 
 const SORT_OPTIONS: { id: SortKey; label: string }[] = [
   { id: 'composite', label: 'Index score' },
@@ -750,18 +794,14 @@ function originLine(b: Brand) {
 
 /* ---------- atoms ---------- */
 
+/** Typographic rank numeral: the top ten in ink, the rest recede so the name and score lead. */
 function RankBadge({ rank, large = false }: { rank: number; large?: boolean }) {
-  const top = rank <= 10;
   return (
     <span
       aria-label={`Rank ${rank}`}
-      className={cx(
-        'tnum inline-flex shrink-0 items-center justify-center font-medium',
-        large ? 'h-11 min-w-11 px-2 text-base' : 'h-8 min-w-8 px-1.5 text-[13px]',
-        top ? 'bg-ink text-paper' : 'border border-rule-strong text-ink-2',
-      )}
+      className={cx('tnum shrink-0 font-serif leading-none', large ? 'text-[44px]' : 'text-[20px] md:text-[22px]', rank <= 10 ? 'text-ink' : 'text-muted')}
     >
-      {rank}
+      {String(rank).padStart(2, '0')}
     </span>
   );
 }
@@ -769,9 +809,9 @@ function RankBadge({ rank, large = false }: { rank: number; large?: boolean }) {
 function TierMark({ tier }: { tier: TierId }) {
   const t = TIER_BY_ID[tier];
   return (
-    <span className="inline-flex items-baseline gap-1.5 text-[11px] font-medium tracking-[0.12em] text-ink-2 uppercase" title={`${t.label} · ${t.band}`}>
+    <span className="inline-flex items-center gap-1 border border-rule px-1.5 text-[10.5px] leading-[18px] whitespace-nowrap text-muted" title={`${t.label} · ${t.band}`}>
       {t.label}
-      <span className="tracking-normal text-muted" aria-hidden>
+      <span className="opacity-75" aria-hidden>
         {t.symbol}
       </span>
     </span>
@@ -791,8 +831,8 @@ const SaveButton = memo(function SaveButton({ saved, onToggle, name, className }
       aria-label={saved ? `Remove ${name} from your list` : `Save ${name} to your list`}
       title={saved ? 'Saved — click to remove' : 'Save to your list'}
       className={cx(
-        'relative z-10 inline-flex h-8 w-8 items-center justify-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
-        saved ? 'text-oxblood' : 'text-muted hover:text-ink',
+        'relative z-10 inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ink',
+        saved ? 'text-oxblood hover:bg-oxblood/10' : 'text-muted hover:bg-rule/70 hover:text-ink',
         className,
       )}
     >
@@ -837,6 +877,68 @@ const ScoreProfile = memo(function ScoreProfile({ scores, highlight, labelled = 
   );
 });
 
+/**
+ * Leaderboard profile with a hover readout. The glyph alone can't carry
+ * eight labelled values, so hovering shows each dimension's score. It sits
+ * above the row's click-through overlay (z-10) and lifts above later rows
+ * while open (hover:z-30).
+ */
+function ProfileHover({ scores, highlight, onOpen }: { scores: Record<DimensionId, number>; highlight?: DimensionId; onOpen: () => void }) {
+  return (
+    <div className="group/profile relative z-10 inline-block cursor-pointer py-3 hover:z-30" onClick={onOpen}>
+      <ScoreProfile scores={scores} highlight={highlight} />
+      <div
+        aria-hidden
+        className="pointer-events-none invisible absolute top-full left-0 w-56 border border-ink bg-panel p-3 opacity-0 shadow-lg transition-opacity duration-100 group-hover/profile:visible group-hover/profile:opacity-100"
+      >
+        <ul className="space-y-1">
+          {DIMENSIONS.map((d) => (
+            <li key={d.id} className={cx('grid grid-cols-[1fr_56px_22px] items-center gap-2 text-[11.5px]', highlight === d.id ? 'text-oxblood' : 'text-ink-2')}>
+              <span className="truncate">{d.short}</span>
+              <span className="h-[4px] bg-rule">
+                <span className={cx('block h-full', highlight === d.id ? 'bg-oxblood' : 'bg-ink-2')} style={{ width: `${scores[d.id]}%` }} />
+              </span>
+              <span className="tnum text-right">{scores[d.id]}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/** Primary place to buy: a flagged retailer if the brand has one, otherwise an open-market price comparison. */
+function buyLink(b: Brand) {
+  const q = searchTerm(b.name);
+  const r = b.stockists?.length ? RETAILER_BY_ID[b.stockists[0]] : null;
+  return r
+    ? { flagged: true, name: r.name, note: 'Often stocked', href: r.search(q), title: `Search ${r.name} for ${b.name}` }
+    : { flagged: false, name: 'Search stockists', note: '', href: SHOP_SEARCHES[0].url(q), title: `Compare stockists of ${b.name}` };
+}
+
+function BuyAt({ brand }: { brand: Brand }) {
+  const l = buyLink(brand);
+  return (
+    <div className="min-w-0">
+      <a
+        href={l.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title={`${l.title} (opens in a new tab)`}
+        className={cx(
+          'relative z-10 inline-flex max-w-full items-center gap-1 underline decoration-1 underline-offset-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
+          l.flagged ? 'text-[13px] font-medium text-ink decoration-rule-strong hover:decoration-ink' : 'text-[12px] text-muted decoration-rule hover:text-ink hover:decoration-ink',
+        )}
+      >
+        <span className="truncate">{l.name}</span>
+        <ArrowUpRight size={13} strokeWidth={1.8} className="shrink-0" aria-hidden />
+      </a>
+      {l.note && <div className="truncate text-[11.5px] text-muted">{l.note}</div>}
+    </div>
+  );
+}
+
 function Chip({ active, onClick, children, count }: { active: boolean; onClick: () => void; children: ReactNode; count?: number }) {
   return (
     <button
@@ -844,7 +946,7 @@ function Chip({ active, onClick, children, count }: { active: boolean; onClick: 
       onClick={onClick}
       aria-pressed={active}
       className={cx(
-        'inline-flex shrink-0 items-center gap-1.5 border px-2.5 py-1.5 text-[12px] whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ink',
+        'inline-flex h-8 shrink-0 items-center gap-1.5 border px-2.5 text-[12px] whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ink',
         active ? 'border-ink bg-ink text-paper' : 'border-rule bg-panel text-ink-2 hover:border-ink-2',
         count === 0 && !active && 'opacity-45',
       )}
@@ -857,6 +959,24 @@ function Chip({ active, onClick, children, count }: { active: boolean; onClick: 
 
 function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={cx('text-[10.5px] font-semibold tracking-[0.18em] text-muted uppercase', className)}>{children}</div>;
+}
+
+/** Native select restyled to match the chip and button language (square, 1px rule, custom chevron). */
+function SelectBox({ active = false, className, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { active?: boolean }) {
+  return (
+    <span className={cx('relative inline-flex', className)}>
+      <select
+        {...props}
+        className={cx(
+          'h-full w-full cursor-pointer appearance-none border bg-panel pr-8 pl-2.5 transition-colors hover:border-ink-2 focus:border-ink focus:outline-none',
+          active ? 'border-ink text-ink' : 'border-rule text-ink-2',
+        )}
+      >
+        {children}
+      </select>
+      <ChevronDown size={14} className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-muted" aria-hidden />
+    </span>
+  );
 }
 
 /* ---------- masthead ---------- */
@@ -942,6 +1062,7 @@ function Masthead({ ranked, data, tab, setTab, savedCount }: { ranked: RankedBra
 interface Facets {
   categoryCounts: Record<CategoryId, number>;
   tierCounts: Record<TierId, number>;
+  stockistCounts: Record<RetailerId, number>;
   countries: { code: string; name: string; count: number }[];
 }
 
@@ -966,7 +1087,7 @@ function ControlPanel({
 }) {
   const [open, setOpen] = useState(false);
   const activeCount =
-    filters.categories.length + filters.tiers.length + (filters.country ? 1 : 0) + (filters.minScore > 0 ? 1 : 0) + (filters.savedOnly ? 1 : 0);
+    filters.categories.length + filters.tiers.length + (filters.country ? 1 : 0) + (filters.minScore > 0 ? 1 : 0) + (filters.stockist ? 1 : 0) + (filters.savedOnly ? 1 : 0);
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setFilters((f) => ({ ...f, [k]: v }));
   const toggleIn = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const isDirty = activeCount > 0 || filters.query !== '';
@@ -1001,20 +1122,20 @@ function ControlPanel({
           <div className="order-2 flex min-w-0 items-center gap-2">
             <label className="flex min-w-0 items-center">
               <span className="sr-only">Sort by</span>
-              <select
+              <SelectBox
                 value={filters.sort}
                 onChange={(e) => {
                   const k = e.target.value as SortKey;
                   setFilters((f) => ({ ...f, sort: k, dir: defaultDir(k) }));
                 }}
-                className="h-10 w-full max-w-[9.5rem] border border-rule bg-panel px-2.5 text-[13px] focus:border-ink focus:outline-none sm:max-w-[11.5rem]"
+                className="h-10 w-full max-w-[9.5rem] text-[13px] sm:max-w-[11.5rem]"
               >
                 {SORT_OPTIONS.map((o) => (
                   <option key={o.id} value={o.id}>
                     Sort: {o.label}
                   </option>
                 ))}
-              </select>
+              </SelectBox>
             </label>
             <button
               type="button"
@@ -1077,7 +1198,7 @@ function ControlPanel({
           </div>
         </div>
         <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
-          <div>
+          <div role="group" aria-label="Market tier">
             <Eyebrow className="mb-2">Market tier</Eyebrow>
             <div className="flex flex-wrap gap-1.5">
               {TIERS.map((t) => (
@@ -1089,42 +1210,54 @@ function ControlPanel({
           </div>
           <label className="block">
             <Eyebrow className="mb-2">Origin</Eyebrow>
-            <select value={filters.country} onChange={(e) => set('country', e.target.value)} className="h-8 w-48 border border-rule bg-panel px-2 text-[12px] focus:border-ink focus:outline-none">
+            <SelectBox value={filters.country} onChange={(e) => set('country', e.target.value)} active={!!filters.country} className="h-8 w-48 text-[12px]">
               <option value="">All countries</option>
               {facets.countries.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.name} ({c.count})
                 </option>
               ))}
-            </select>
+            </SelectBox>
           </label>
-          <label className="block w-44">
-            <Eyebrow className="mb-2">
-              Min. score <span className="tnum text-ink">{filters.minScore > 0 ? `≥ ${filters.minScore}` : 'any'}</span>
-            </Eyebrow>
-            <input type="range" min={0} max={90} step={5} value={filters.minScore} onChange={(e) => set('minScore', Number(e.target.value))} className="h-8 w-full" />
-          </label>
-          <div className="flex items-center gap-1.5">
-            <Chip active={filters.savedOnly} onClick={() => set('savedOnly', !filters.savedOnly)}>
-              <Bookmark size={12} /> Saved only
-            </Chip>
-            <button
-              type="button"
-              onClick={() => setFilters((f) => ({ ...DEFAULT_FILTERS, sort: f.sort, dir: f.dir }))}
-              disabled={!isDirty}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] text-muted hover:text-ink disabled:opacity-40 disabled:hover:text-muted"
-            >
-              <RotateCcw size={12} /> Reset
-            </button>
+          <div role="group" aria-label="Minimum score">
+            <Eyebrow className="mb-2">Min. score</Eyebrow>
+            <div className="flex flex-wrap gap-1.5">
+              {MIN_SCORE_OPTIONS.map((v) => (
+                <Chip key={v} active={filters.minScore === v} onClick={() => set('minScore', v)}>
+                  {v === 0 ? 'Any' : <span className="tnum">{v}+</span>}
+                </Chip>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex items-baseline justify-between py-3 text-[12px] text-muted" aria-live="polite">
-        <span>
-          <span className="tnum text-ink">{nf.format(resultCount)}</span> of <span className="tnum">{nf.format(total)}</span> brands
+      {/* result line: count + reset on the left, quick "show" toggles on the right */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 text-[12px] text-muted">
+        <span className="flex flex-wrap items-baseline gap-x-3">
+          <span aria-live="polite">
+            <span className="tnum text-ink">{nf.format(resultCount)}</span> of <span className="tnum">{nf.format(total)}</span> brands
+          </span>
+          {isDirty && (
+            <button
+              type="button"
+              onClick={() => setFilters((f) => ({ ...DEFAULT_FILTERS, sort: f.sort, dir: f.dir }))}
+              className="inline-flex items-center gap-1 text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink hover:decoration-ink"
+            >
+              <RotateCcw size={11} aria-hidden /> Reset filters
+            </button>
+          )}
         </span>
-        <span className="hidden sm:inline">Ranked by composite index · click any brand for the full dossier</span>
+        <div role="group" aria-label="Show only" className="flex flex-wrap gap-1.5">
+          {RETAILERS.map((r) => (
+            <Chip key={r.id} active={filters.stockist === r.id} count={facets.stockistCounts[r.id]} onClick={() => set('stockist', filters.stockist === r.id ? '' : r.id)}>
+              Often at {r.name}
+            </Chip>
+          ))}
+          <Chip active={filters.savedOnly} onClick={() => set('savedOnly', !filters.savedOnly)}>
+            <Bookmark size={12} /> Saved only
+          </Chip>
+        </div>
       </div>
     </>
   );
@@ -1171,21 +1304,38 @@ interface ItemProps {
   onToggle: (id: string) => void;
 }
 
+/**
+ * One column template shared by the header and every row, so headers can't
+ * drift from their cells. Columns appear as width allows:
+ *   base  rank · brand · score · save
+ *   md    + discipline/tier · profile
+ *   lg    + buy at
+ *   xl    + signature
+ */
+const LEADER_COLS =
+  'grid-cols-[40px_minmax(0,1fr)_auto_36px] md:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_76px_40px] lg:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_132px_76px_40px] xl:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_minmax(0,1.5fr)_132px_76px_40px]';
+
 const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, onToggle }: ItemProps) {
   const dim = (DIMENSION_IDS as readonly string[]).includes(sortKey) ? (sortKey as DimensionId) : undefined;
+  const open = () => onOpen(b.id);
   return (
-    <div className="group relative grid h-full grid-cols-[40px_minmax(0,1fr)_auto_32px] items-center gap-x-3 border-b border-rule px-1 transition-colors hover:bg-panel sm:px-4 md:grid-cols-[52px_minmax(0,2.4fr)_minmax(0,1.3fr)_88px_minmax(0,1.7fr)_80px_36px] md:gap-x-4">
+    <div className={cx('group relative grid h-full items-center gap-x-3 border-b border-rule px-1 transition-colors hover:bg-panel sm:px-4 md:gap-x-4', LEADER_COLS)}>
       <RankBadge rank={b.rank} />
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => onOpen(b.id)}
+            onClick={open}
             className="truncate text-left font-serif text-[22px] leading-tight after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ink group-hover:underline group-hover:decoration-1 group-hover:underline-offset-4"
           >
             {b.name}
           </button>
-         
+          {/* below lg the Buy at column is hidden, so flagged stockists surface as a tag */}
+          {b.stockists?.map((r) => (
+            <span key={r} className="shrink-0 border border-rule px-1 text-[10px] leading-4 whitespace-nowrap text-muted lg:hidden">
+              {RETAILER_BY_ID[r].name}
+            </span>
+          ))}
         </div>
         <div className="truncate text-[12px] text-muted">
           {originLine(b)}
@@ -1194,15 +1344,18 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
         </div>
       </div>
       <div className="hidden min-w-0 md:block">
-        <div className="truncate text-[13px] text-ink-2">{CATEGORY_BY_ID[b.category].label}</div>
+        <div className="mb-1 truncate text-[13px] text-ink-2">{CATEGORY_BY_ID[b.category].label}</div>
         <TierMark tier={b.tier} />
       </div>
       <div className="hidden md:block">
-        <ScoreProfile scores={b.scores} highlight={dim} />
+        <ProfileHover scores={b.scores} highlight={dim} onOpen={open} />
       </div>
-      <div className="hidden min-w-0 md:block">
-        <div className="truncate font-serif text-[16px] text-ink-2 italic">{b.signatures[0]?.name ?? '—'}</div>
+      <div className="hidden min-w-0 xl:block">
+        <div className="truncate text-[13.5px] text-ink-2">{b.signatures[0]?.name ?? '—'}</div>
         {b.signatures.length > 1 && <div className="truncate text-[11.5px] text-muted">+ {b.signatures.slice(1).map((s) => s.name).join(', ')}</div>}
+      </div>
+      <div className="hidden lg:block">
+        <BuyAt brand={b} />
       </div>
       <div className="text-right">
         <div className="tnum font-serif text-[26px] leading-none">{b.composite.toFixed(1)}</div>
@@ -1214,7 +1367,7 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
           <div className="tnum mt-1 text-[11px] text-muted">top {Math.max(1, 100 - b.percentile)}%</div>
         )}
       </div>
-      <SaveButton saved={saved} onToggle={() => onToggle(b.id)} name={b.name} />
+      <SaveButton saved={saved} onToggle={() => onToggle(b.id)} name={b.name} className="justify-self-end" />
     </div>
   );
 });
@@ -1224,13 +1377,19 @@ function LeaderHeader() {
   return (
     <div
       aria-hidden
-      className="sticky top-[65px] z-20 hidden grid-cols-[52px_minmax(0,2.4fr)_minmax(0,1.3fr)_88px_minmax(0,1.7fr)_80px_36px] gap-x-4 border-b border-ink bg-paper/95 px-4 py-2 text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase backdrop-blur md:grid"
+      className={cx(
+        'sticky top-[65px] z-20 hidden items-center gap-x-4 border-b border-ink bg-paper/95 px-4 py-2 text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase backdrop-blur md:grid',
+        LEADER_COLS,
+      )}
     >
       <span>Rank</span>
       <span>Brand</span>
       <span>Discipline · Tier</span>
-      <span title={DIMENSIONS.map((d) => `${d.abbr} ${d.label}`).join('\n')}>Profile</span>
-      <span>Signature</span>
+      <span className="inline-flex items-center gap-1" title="Eight dimension scores, in methodology order. Hover a profile for the values.">
+        Profile <Info size={11} strokeWidth={2} aria-hidden />
+      </span>
+      <span className="hidden xl:block">Signature</span>
+      <span className="hidden lg:block">Buy at</span>
       <span className="text-right">Score</span>
       <span />
     </div>
@@ -1289,11 +1448,19 @@ const BrandCard = memo(function BrandCard({ brand: b, saved, sortKey, onOpen, on
           <div className="tnum mt-1 text-[11px] text-muted">{dim ? `${DIM_BY_ID[dim].short} ${b.scores[dim]}` : `#${b.categoryRank} in discipline`}</div>
         </div>
       </div>
-      {b.signatures[0] && (
-        <p className="mt-4 border-t border-rule pt-3 text-[12px] text-muted">
-          <span className="tracking-[0.14em] uppercase">Signature</span> <span className="font-serif text-[15px] text-ink-2 italic">{b.signatures[0].name}</span>
+      <div className="mt-4 flex items-end justify-between gap-4 border-t border-rule pt-3">
+        <p className="min-w-0 text-[12px] text-muted">
+          {b.signatures[0] && (
+            <>
+              <span className="block text-[10.5px] tracking-[0.14em] uppercase">Signature</span>
+              <span className="block truncate text-[13px] text-ink-2">{b.signatures[0].name}</span>
+            </>
+          )}
         </p>
-      )}
+        <div className="shrink-0 text-right">
+          <BuyAt brand={b} />
+        </div>
+      </div>
     </article>
   );
 });
@@ -1381,6 +1548,44 @@ function DimensionBars({ brand, medians, weights }: { brand: RankedBrand; median
         <span>% = weight in composite</span>
       </div>
     </div>
+  );
+}
+
+function WhereToBuy({ brand: b }: { brand: Brand }) {
+  const q = searchTerm(b.name);
+  const flagged = new Set(b.stockists ?? []);
+  const links = [
+    // flagged retailers first, then the remaining registry retailers as plain searches
+    ...[...RETAILERS].sort((x, y) => Number(flagged.has(y.id)) - Number(flagged.has(x.id))).map((r) => ({
+      id: r.id,
+      name: r.name,
+      note: flagged.has(r.id) ? r.note : 'Not a regular stockist, but worth a search',
+      href: r.search(q),
+      flagged: flagged.has(r.id),
+    })),
+    ...SHOP_SEARCHES.map((x) => ({ id: x.id, name: x.name, note: x.note, href: x.url(q), flagged: false })),
+  ];
+  return (
+    <section className="mt-10">
+      <h3 className="mb-3 font-serif text-[26px]">Where to buy</h3>
+      <ul className="divide-y divide-rule border-y border-rule">
+        {links.map((l) => (
+          <li key={l.id}>
+            <a href={l.href} target="_blank" rel="noopener noreferrer" className="group/buy flex items-center justify-between gap-4 py-3 hover:bg-panel focus-visible:outline-2 focus-visible:outline-ink">
+              <span className="min-w-0">
+                <span className={cx('block text-[14px]', l.flagged ? 'font-medium text-ink' : 'text-ink-2')}>
+                  {l.name}
+                  {l.flagged && <span className="ml-2 border border-ink px-1 align-[1px] text-[10px] font-normal tracking-wide uppercase">Often stocked</span>}
+                </span>
+                <span className="block text-[12px] text-muted">{l.note}</span>
+              </span>
+              <ArrowUpRight size={16} className="shrink-0 text-muted transition-colors group-hover/buy:text-ink" aria-hidden />
+            </a>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11.5px] text-muted">Links open a live search in a new tab. Stockist flags are editorial; off-price stock changes daily.</p>
+    </section>
   );
 }
 
@@ -1534,6 +1739,8 @@ function BrandDrawer({
               </ol>
             </section>
           )}
+
+          <WhereToBuy brand={b} />
 
           <section className="mt-10">
             <h3 className="mb-3 font-serif text-[26px]">Fact sheet</h3>
@@ -1825,6 +2032,7 @@ function MethodologyView({ weights }: { weights: Weights }) {
       <ul className="mt-4 space-y-3 text-[13.5px] leading-relaxed text-ink-2">
         <li>Curated scores are editorial assessments synthesised from construction analysis, materials sourcing, ownership history and enthusiast consensus. They are informed opinion, not laboratory measurements or audits.</li>
         <li>Brands change — ownership, factories and quality drift. Every record carries an updated date; treat older assessments with proportionate caution.</li>
+        <li>“Buy at” links open a live search on the retailer’s site. An “Often at TK Maxx” flag is an editorial note that the brand turns up there regularly, not a stock check: off-price retailers buy opportunistically and the rails change daily.</li>
       </ul>
     </article>
   );
@@ -1869,6 +2077,7 @@ export default function App() {
     const hasQuery = q.tokens.length > 0;
     const categoryCounts = Object.fromEntries(CATEGORY_IDS.map((c) => [c, 0])) as Record<CategoryId, number>;
     const tierCounts = Object.fromEntries(TIER_IDS.map((t) => [t, 0])) as Record<TierId, number>;
+    const stockistCounts = Object.fromEntries(RETAILER_IDS.map((r) => [r, 0])) as Record<RetailerId, number>;
     const countryMap = new Map<string, { code: string; name: string; count: number }>();
     const cats = deferred.categories;
     const tiers = deferred.tiers;
@@ -1890,12 +2099,15 @@ export default function App() {
 
       const catOk = !cats.length || cats.includes(b.category) || !!b.subcategories?.some((s) => cats.includes(s));
       const tierOk = !tiers.length || tiers.includes(b.tier);
-      if (tierOk) {
+      const stockOk = !deferred.stockist || !!b.stockists?.includes(deferred.stockist);
+      // each facet counts what its own option would show, given every other active filter
+      if (tierOk && stockOk) {
         categoryCounts[b.category]++;
         b.subcategories?.forEach((s) => categoryCounts[s]++);
       }
-      if (catOk) tierCounts[b.tier]++;
-      if (catOk && tierOk) hits.push({ b, rel });
+      if (catOk && stockOk) tierCounts[b.tier]++;
+      if (catOk && tierOk) b.stockists?.forEach((r) => stockistCounts[r]++);
+      if (catOk && tierOk && stockOk) hits.push({ b, rel });
     }
 
     const key = deferred.sort;
@@ -1921,7 +2133,7 @@ export default function App() {
 
     return {
       results: hits.map((h) => h.b),
-      facets: { categoryCounts, tierCounts, countries: [...countryMap.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) },
+      facets: { categoryCounts, tierCounts, stockistCounts, countries: [...countryMap.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) },
     };
   }, [ranked, deferred, saved]);
 

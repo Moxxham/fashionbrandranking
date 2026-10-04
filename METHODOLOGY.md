@@ -113,6 +113,7 @@ interface Brand {
   editorial: { summary: string; strengths: string[]; caveats: string[] };
   tags?: string[];
   website?: string;
+  stockists?: RetailerId[];         // editorial "often stocked at" flags, e.g. ['tkmaxx']
   status?: 'active' | 'hiatus' | 'defunct';
   provenance: 'curated' | 'ingested';  // no synthetic records, ever
   updatedAt?: string;               // ISO date
@@ -133,4 +134,5 @@ interface Brand {
 
 - Curated scores are **editorial assessments**. They synthesise construction analysis, sourcing, ownership history and enthusiast consensus, and they are not audits or lab tests.
 - Brands drift: ownership changes, factories move and quality slides. Every record carries `updatedAt`.
+- **Where to buy.** `stockists` flags (curated in `scripts/stockists.mjs`) record retailers a brand regularly turns up at, such as TK Maxx UK. They are editorial notes, not stock checks. The app turns each flag into a live retailer search, and offers open-market searches (Google Shopping, eBay UK, Vinted) for every brand.
 - Every record is a real brand. Where a founding year or city is not confidently known it is left `null` rather than guessed, and lesser-documented brands carry lower confidence so their composites shrink toward the prior.

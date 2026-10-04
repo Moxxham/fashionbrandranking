@@ -8,7 +8,7 @@
   --color-panel: #fbfaf7;
   --color-ink: #161514;
   --color-ink-2: #3a3834;
-  --color-muted: #6c675f;
+  --color-muted: #5c5750; /* 6.4:1 on paper (was 5.0:1) */
   --color-rule: #dcd7cd;
   --color-rule-strong: #b3ada1;
   --color-oxblood: #7a2121;
@@ -57,10 +57,6 @@ body {
 }
 .scrollbar-none::-webkit-scrollbar {
   display: none;
-}
-
-input[type='range'] {
-  accent-color: var(--color-ink);
 }
 
 @media (prefers-reduced-motion: reduce) {

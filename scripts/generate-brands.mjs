@@ -17,6 +17,9 @@
  *   3. Ingested input — optional --input file(s): JSON array, dataset
  *                       envelope, or NDJSON of raw records. Overrides by id.
  *
+ * Stockist flags (where to buy) come from scripts/stockists.mjs and are
+ * attached after all sources merge, so an ingested override keeps them.
+ *
  * Records are validated and scored in batches of --batch.
  *
  * Usage
@@ -36,6 +39,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { ROSTER } from './roster.mjs';
+import { RETAILER_IDS, STOCKISTS } from './stockists.mjs';
 
 /* ================================================================== */
 /* Methodology — keep in sync with §1/§3 of src/App.tsx.               */
@@ -162,6 +166,7 @@ function validateBrand(b) {
   if (!b.editorial || typeof b.editorial.summary !== 'string' || !Array.isArray(b.editorial.strengths) || !Array.isArray(b.editorial.caveats)) e.push('editorial { summary, strengths[], caveats[] } required');
   if (b.ownership && !OWNERSHIP.includes(b.ownership.type)) e.push('ownership.type invalid');
   if (b.priceUSD && !(b.priceUSD.from > 0 && b.priceUSD.to >= b.priceUSD.from)) e.push('priceUSD.from/to invalid');
+  if (b.stockists !== undefined && (!Array.isArray(b.stockists) || b.stockists.some((r) => !RETAILER_IDS.includes(r)))) e.push(`stockists must be retailer ids from ${RETAILER_IDS.join(', ')}`);
   if (b.provenance === 'generated') e.push('synthetic/placeholder records are not allowed — real brands only');
   else if (!['curated', 'ingested'].includes(b.provenance)) e.push('provenance invalid');
   return e;
@@ -307,7 +312,7 @@ function main() {
   const now = opts.date ? new Date(opts.date) : new Date();
   const today = now.toISOString().slice(0, 10);
   const byId = new Map();
-  const counts = { curated: 0, ingested: 0, rejected: 0, duplicates: 0 };
+  const counts = { curated: 0, ingested: 0, rejected: 0, duplicates: 0, unresolvedStockists: 0 };
 
   const add = (rec, label) => {
     const errs = validateBrand(rec);
@@ -365,7 +370,24 @@ function main() {
     });
     log(`• ingested ${ok}/${records.length} from ${path}`);
   }
-  if (opts.strict && (counts.rejected || counts.duplicates)) die(`${counts.rejected} rejected, ${counts.duplicates} duplicate record(s) (--strict)`);
+  // 4: stockist flags (merged into any stockists a record already carries)
+  const stockistCounts = {};
+  for (const [retailer, ids] of Object.entries(STOCKISTS)) {
+    if (!RETAILER_IDS.includes(retailer)) die(`stockists.mjs lists unknown retailer "${retailer}"`);
+    stockistCounts[retailer] = 0;
+    for (const id of ids) {
+      const rec = byId.get(id);
+      if (!rec) {
+        counts.unresolvedStockists++;
+        log(`  ⚠ stockists.${retailer}: no brand with id "${id}"`);
+        continue;
+      }
+      if (!rec.stockists?.includes(retailer)) byId.set(id, { ...rec, stockists: [...(rec.stockists ?? []), retailer] });
+      stockistCounts[retailer]++;
+    }
+  }
+  if (opts.strict && (counts.rejected || counts.duplicates || counts.unresolvedStockists))
+    die(`${counts.rejected} rejected, ${counts.duplicates} duplicate record(s), ${counts.unresolvedStockists} unresolved stockist id(s) (--strict)`);
 
   // score + rank
   const brands = rankAll([...byId.values()]);
@@ -398,6 +420,7 @@ function main() {
   const byCat = {};
   for (const b of brands) byCat[b.category] = (byCat[b.category] ?? 0) + 1;
   log(`  by discipline: ${Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} ${n}`).join(' · ')}`);
+  log(`  stockists: ${Object.entries(stockistCounts).map(([r, n]) => `${r} ${n}`).join(' · ')}`);
   log(`  composite p10 ${pct(0.1)} · median ${pct(0.5)} · p90 ${pct(0.9)} · max ${scoresSorted.at(-1)}`);
   log(`  top 5: ${brands.slice(0, 5).map((b) => `${b.rank}. ${b.name} (${b.composite})`).join(' · ')}`);
   log(`  done in ${(performance.now() - t0).toFixed(0)} ms`);

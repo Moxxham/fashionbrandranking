@@ -102,6 +102,12 @@
         },
         "tags": { "type": "array", "items": { "type": "string" } },
         "website": { "type": "string", "format": "uri" },
+        "stockists": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["tkmaxx"] },
+          "description": "Retailers where the brand regularly appears (editorial flag, not live stock). Ids map to the RETAILERS registry in src/App.tsx; curated in scripts/stockists.mjs."
+        },
         "status": { "enum": ["active", "hiatus", "defunct"] },
         "provenance": { "enum": ["curated", "ingested"], "description": "Synthetic or placeholder records are not permitted." },
         "updatedAt": { "type": "string", "format": "date" },
