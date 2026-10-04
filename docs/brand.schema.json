@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://menswear-index.pages.dev/schema/brands.v1.json",
+  "title": "Menswear Index dataset",
+  "description": "Envelope for brands.json (schemaVersion 1.0, methodology 1.0). The app also accepts a bare array of Brand records.",
+  "type": "object",
+  "required": ["schemaVersion", "brands"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "methodologyVersion": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "generator": { "type": "object" },
+    "weights": {
+      "description": "Dimension weights used to compute composites. The app re-normalises these to sum to 1.",
+      "$ref": "#/$defs/dimensionMap"
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "total": { "type": "integer" },
+        "curated": { "type": "integer" },
+        "ingested": { "type": "integer" }
+      }
+    },
+    "count": { "type": "integer", "minimum": 0 },
+    "brands": { "type": "array", "items": { "$ref": "#/$defs/brand" } }
+  },
+  "$defs": {
+    "dimensionMap": {
+      "type": "object",
+      "required": ["material", "construction", "design", "longevity", "value", "reputation", "consistency", "transparency"],
+      "properties": {
+        "material": { "type": "number", "minimum": 0, "maximum": 100 },
+        "construction": { "type": "number", "minimum": 0, "maximum": 100 },
+        "design": { "type": "number", "minimum": 0, "maximum": 100 },
+        "longevity": { "type": "number", "minimum": 0, "maximum": 100 },
+        "value": { "type": "number", "minimum": 0, "maximum": 100 },
+        "reputation": { "type": "number", "minimum": 0, "maximum": 100 },
+        "consistency": { "type": "number", "minimum": 0, "maximum": 100 },
+        "transparency": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "category": {
+      "enum": ["tailoring", "shirting", "trad", "heritage", "denim", "country", "technical", "designer", "contemporary", "streetwear", "essentials", "knitwear", "footwear", "accessories"]
+    },
+    "brand": {
+      "type": "object",
+      "required": ["id", "name", "founded", "origin", "category", "tier", "scores", "confidence", "signatures", "editorial", "provenance"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "description": "URL-safe slug, unique across the catalogue; used in #brand/<id> deep links." },
+        "name": { "type": "string", "minLength": 1 },
+        "founded": { "type": ["integer", "null"], "minimum": 1500, "maximum": 2100 },
+        "origin": {
+          "type": "object",
+          "required": ["country", "countryCode"],
+          "properties": {
+            "country": { "type": "string" },
+            "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$", "description": "ISO 3166-1 alpha-2" },
+            "city": { "type": "string" }
+          }
+        },
+        "category": { "$ref": "#/$defs/category", "description": "Primary discipline; determines discipline rank." },
+        "subcategories": { "type": "array", "items": { "$ref": "#/$defs/category" }, "uniqueItems": true },
+        "tier": { "enum": ["atelier", "luxury", "premium", "accessible", "mainstream"] },
+        "priceUSD": {
+          "type": "object",
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "type": "number", "exclusiveMinimum": 0 },
+            "to": { "type": "number", "exclusiveMinimum": 0 },
+            "reference": { "type": "string", "description": "The item the range describes, e.g. 'Oxford shirt'." }
+          }
+        },
+        "production": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z]{2}$" }, "description": "Principal manufacturing countries (ISO-2)." },
+        "ownership": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "enum": ["independent", "family", "group", "public", "private-equity"] },
+            "parent": { "type": "string" }
+          }
+        },
+        "scores": { "$ref": "#/$defs/dimensionMap", "description": "Sub-dimension scores 0–100 against the methodology rubric." },
+        "confidence": { "type": "number", "minimum": 0.5, "maximum": 1, "description": "Evidence confidence; composite shrinks toward the prior (60) as this falls." },
+        "signatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": { "name": { "type": "string", "minLength": 1 }, "note": { "type": "string" } }
+          }
+        },
+        "editorial": {
+          "type": "object",
+          "required": ["summary", "strengths", "caveats"],
+          "properties": {
+            "summary": { "type": "string" },
+            "strengths": { "type": "array", "items": { "type": "string" } },
+            "caveats": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "website": { "type": "string", "format": "uri" },
+        "status": { "enum": ["active", "hiatus", "defunct"] },
+        "provenance": { "enum": ["curated", "ingested"], "description": "Synthetic or placeholder records are not permitted." },
+        "updatedAt": { "type": "string", "format": "date" },
+        "composite": { "type": "number", "readOnly": true, "description": "Derived by the generator; the app recomputes it." },
+        "rank": { "type": "integer", "readOnly": true, "description": "Derived by the generator; the app recomputes it." }
+      }
+    }
+  }
+}
