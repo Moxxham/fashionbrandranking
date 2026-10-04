@@ -120,7 +120,7 @@ interface Brand {
 }
 ```
 
-**Scaling notes (designed for 2,000+ records; currently 558)**
+**Scaling notes (designed for 2,000+ records; currently 1,000)**
 
 - Records are flat and fixed-shape, at about 0.9 KB each: 2,000 records come to about 1.9 MB raw and about 300 KB with brotli or gzip.
 - Only raw sub-scores are authoritative. Composites and ranks are derived, so a weight change never needs a data migration.

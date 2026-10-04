@@ -47,12 +47,12 @@ node scripts/generate-brands.mjs --input my-brands.ndjson --strict
 node scripts/generate-brands.mjs --format ndjson --out dist-data/brands.ndjson
 ```
 
-**Every record is a real brand.** There is no synthetic or placeholder generation. Both the generator and the app reject any record marked `provenance: "generated"`. The catalogue currently holds **558 brands**. It grows by adding rows to `scripts/roster.mjs` or by ingesting files, and the app is built to handle 2,000+.
+**Every record is a real brand.** There is no synthetic or placeholder generation. Both the generator and the app reject any record marked `provenance: "generated"`. The catalogue currently holds **1,000 brands**. It grows by adding rows to `scripts/roster.mjs` or by ingesting files, and the app is built to handle 2,000+.
 
 The pipeline combines three sources and validates and scores records in batches (`--batch`, default 100):
 
 1. **Curated seed:** 53 detailed records. These are parsed from the `/* @seed:begin */ … /* @seed:end */` JSON block in `App.tsx`, so the app's fallback and the dataset never diverge. The block must stay strict JSON.
-2. **Curated roster:** 505 more real brands, stored as compact editorial rows in [`scripts/roster.mjs`](scripts/roster.mjs). Where a founding year or city isn't confidently known it is `null`, never guessed. Lesser-documented brands carry confidence 0.70–0.75 so their composites are shrunk toward the prior. A duplicate brand is skipped with a warning, and `--strict` fails the build on any duplicate.
+2. **Curated roster:** 947 more real brands, stored as compact editorial rows in [`scripts/roster.mjs`](scripts/roster.mjs). Where a founding year or city isn't confidently known it is `null`, never guessed. Lesser-documented brands carry confidence 0.70–0.75 so their composites are shrunk toward the prior. A duplicate brand is skipped with a warning, and `--strict` fails the build on any duplicate.
 3. **Ingestion** (`--input`, repeatable): a JSON array, a dataset envelope, or NDJSON. Records are coerced (names → slugs, country codes → names, string signatures → objects), validated and reported. An ingested record overrides an existing record with the same `id`. See `docs/example-input.ndjson`.
 
 Pass `--date` to make the output byte-for-byte reproducible.

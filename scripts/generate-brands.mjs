@@ -59,7 +59,7 @@ const COUNTRIES = {
   GB: 'United Kingdom', IT: 'Italy', JP: 'Japan', US: 'United States', FR: 'France', DE: 'Germany', SE: 'Sweden',
   DK: 'Denmark', NO: 'Norway', NL: 'Netherlands', ES: 'Spain', PT: 'Portugal', CA: 'Canada', AU: 'Australia',
   KR: 'South Korea', BE: 'Belgium', CH: 'Switzerland', IE: 'Ireland', HK: 'Hong Kong', HU: 'Hungary', RO: 'Romania',
-  GG: 'Guernsey', AT: 'Austria', FI: 'Finland', IN: 'India', NZ: 'New Zealand',
+  GG: 'Guernsey', AT: 'Austria', FI: 'Finland', IN: 'India', NZ: 'New Zealand', TR: 'Turkey', IS: 'Iceland', BR: 'Brazil', SK: 'Slovakia',
 };
 
 /* ================================================================== */
