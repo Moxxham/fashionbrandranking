@@ -21,8 +21,6 @@
 import { memo, startTransition, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
   ArrowUpRight,
   Bookmark,
   BookmarkCheck,
@@ -328,6 +326,8 @@ interface SearchIndex {
 }
 
 interface RankedBrand extends Brand {
+  /** True when another brand shares this rank (shown as "=3"). */
+  tied: boolean;
   /** Discount off RRP (%) at which the brand is an instant buy — see BUY_AT. */
   buyAt: number;
   arithmetic: number;
@@ -377,7 +377,7 @@ function buyAtDiscount(composite: number, value: number): number {
 }
 
 /** Composite descending; ties → construction, material, name. Competition ranking ("1-2-2-4"). */
-function compareForRank(a: Omit<RankedBrand, 'rank' | 'categoryRank' | 'categoryCount' | 'percentile'>, b: typeof a) {
+function compareForRank(a: Omit<RankedBrand, 'rank' | 'tied' | 'categoryRank' | 'categoryCount' | 'percentile'>, b: typeof a) {
   return b.composite - a.composite || b.scores.construction - a.scores.construction || b.scores.material - a.scores.material || a.name.localeCompare(b.name);
 }
 
@@ -390,7 +390,7 @@ function rankBrands(brands: Brand[], weights: Weights): RankedBrand[] {
   for (const b of scored) catTotals.set(b.category, (catTotals.get(b.category) ?? 0) + 1);
   let lastScore = Number.NaN;
   let lastRank = 0;
-  return scored.map((b, i) => {
+  const ranked = scored.map((b, i) => {
     const rank = b.composite === lastScore ? lastRank : i + 1;
     lastScore = b.composite;
     lastRank = rank;
@@ -402,6 +402,9 @@ function rankBrands(brands: Brand[], weights: Weights): RankedBrand[] {
     catSeen.set(b.category, cs);
     return { ...b, rank, categoryRank, categoryCount: catTotals.get(b.category) ?? 1, percentile: n > 1 ? Math.round((1 - (rank - 1) / (n - 1)) * 100) : 100 };
   });
+  const perRank = new Map<number, number>();
+  for (const b of ranked) perRank.set(b.rank, (perRank.get(b.rank) ?? 0) + 1);
+  return ranked.map((b) => ({ ...b, tied: (perRank.get(b.rank) ?? 0) > 1 }));
 }
 
 function dimensionMedians(brands: RankedBrand[]): Record<DimensionId, number> {
@@ -785,7 +788,7 @@ function useSaved() {
 /* §8  UI COMPONENTS                                                   */
 /* ================================================================== */
 
-type SortKey = 'composite' | DimensionId | 'founded' | 'name';
+type SortKey = 'composite' | 'categoryRank' | DimensionId | 'founded' | 'name';
 type SortDir = 'asc' | 'desc';
 
 interface Filters {
@@ -805,14 +808,52 @@ const DEFAULT_FILTERS: Filters = { query: '', categories: [], tiers: [], country
 /** Thresholds offered by the minimum-score filter (catalogue median sits around 67). */
 const MIN_SCORE_OPTIONS = [0, 60, 70, 80];
 
-const SORT_OPTIONS: { id: SortKey; label: string }[] = [
-  { id: 'composite', label: 'Index score' },
-  ...DIMENSIONS.map((d) => ({ id: d.id as SortKey, label: d.label })),
-  { id: 'founded', label: 'Founding year' },
-  { id: 'name', label: 'Name' },
+/** Each option carries its direction, so one dropdown replaces sort + direction toggle. */
+const SORT_OPTIONS: { key: SortKey; dir: SortDir; label: string }[] = [
+  { key: 'composite', dir: 'desc', label: 'Index score, high to low' },
+  { key: 'composite', dir: 'asc', label: 'Index score, low to high' },
+  { key: 'categoryRank', dir: 'asc', label: 'Rank within discipline' },
+  ...DIMENSIONS.map((d) => ({ key: d.id as SortKey, dir: 'desc' as SortDir, label: `${d.short}, high to low` })),
+  { key: 'founded', dir: 'asc', label: 'Oldest first' },
+  { key: 'founded', dir: 'desc', label: 'Newest first' },
+  { key: 'name', dir: 'asc', label: 'Name, A to Z' },
+  { key: 'name', dir: 'desc', label: 'Name, Z to A' },
 ];
+const sortValue = (key: SortKey, dir: SortDir) => `${key}:${dir}`;
+const isSortOption = (key: string, dir: string) => SORT_OPTIONS.some((o) => o.key === key && o.dir === dir);
 
-const defaultDir = (k: SortKey): SortDir => (k === 'founded' || k === 'name' ? 'asc' : 'desc');
+/* Search, sort and filters live in the query string so any view can be bookmarked. */
+function filtersFromSearch(search: string): Filters {
+  const p = new URLSearchParams(search);
+  const list = (k: string) => (p.get(k) ?? '').split(',').filter(Boolean);
+  const [key, dir] = (p.get('sort') ?? '').split(':');
+  const min = Number(p.get('min'));
+  const country = (p.get('origin') ?? '').toUpperCase();
+  const stockist = p.get('stockist') ?? '';
+  return {
+    ...DEFAULT_FILTERS,
+    query: p.get('q') ?? '',
+    categories: list('discipline').filter((c): c is CategoryId => (CATEGORY_IDS as readonly string[]).includes(c)),
+    tiers: list('tier').filter((t): t is TierId => (TIER_IDS as readonly string[]).includes(t)),
+    country: /^[A-Z]{2}$/.test(country) ? country : '',
+    minScore: MIN_SCORE_OPTIONS.includes(min) ? min : 0,
+    stockist: (RETAILER_IDS as readonly string[]).includes(stockist) ? (stockist as RetailerId) : '',
+    ...(isSortOption(key, dir) ? { sort: key as SortKey, dir: dir as SortDir } : {}),
+  };
+}
+
+function searchFromFilters(f: Filters): string {
+  const parts: string[] = [];
+  const add = (k: string, v: string) => parts.push(`${k}=${encodeURIComponent(v).replace(/%2C/g, ',').replace(/%3A/g, ':')}`);
+  if (f.query) add('q', f.query);
+  if (f.sort !== DEFAULT_FILTERS.sort || f.dir !== DEFAULT_FILTERS.dir) add('sort', sortValue(f.sort, f.dir));
+  if (f.categories.length) add('discipline', f.categories.join(','));
+  if (f.tiers.length) add('tier', f.tiers.join(','));
+  if (f.country) add('origin', f.country);
+  if (f.minScore) add('min', String(f.minScore));
+  if (f.stockist) add('stockist', f.stockist);
+  return parts.length ? `?${parts.join('&')}` : '';
+}
 
 function cx(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(' ');
@@ -824,11 +865,12 @@ function originLine(b: Brand) {
 
 /* ---------- atoms ---------- */
 
-/** Typographic rank numeral: the top ten in ink, the rest recede so the name and score lead. */
-function RankBadge({ rank }: { rank: number }) {
+/** Rank numeral; ties read "=3". The top ten in ink, the rest recede so the name and score lead. */
+function RankBadge({ rank, tied }: { rank: number; tied: boolean }) {
   return (
-    <span aria-label={`Rank ${rank}`} className={cx('tnum shrink-0 text-[14px] font-medium leading-none', rank <= 10 ? 'text-ink' : 'text-muted')}>
-      {String(rank).padStart(2, '0')}
+    <span aria-label={`Rank ${rank}${tied ? ', tied' : ''}`} className={cx('tnum shrink-0 text-[14px] font-medium leading-none', rank <= 10 ? 'text-ink' : 'text-muted')}>
+      {tied && '='}
+      {rank}
     </span>
   );
 }
@@ -953,14 +995,16 @@ const SaveButton = memo(function SaveButton({ saved, onToggle, name, className }
 
 /**
  * Score profile: one thin bar per dimension, in methodology order.
- * The shape reads at a glance (a "craft" brand vs a "design" brand); exact
- * values are in the hover readout and in the dossier.
+ * The two strongest dimensions are drawn dark so rows read differently at a
+ * glance; exact values are in the hover readout and in the dossier. Bars
+ * start at zero: rescaling to the visible range would exaggerate gaps.
  */
 const ScoreProfile = memo(function ScoreProfile({ scores, highlight }: { scores: Record<DimensionId, number>; highlight?: DimensionId }) {
   const bw = 6;
   const gap = 2;
   const h = 26;
   const w = DIMENSIONS.length * (bw + gap) - gap;
+  const top = new Set([...DIMENSION_IDS].sort((a, b) => scores[b] - scores[a]).slice(0, 2));
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={DIMENSIONS.map((d) => `${d.short} ${scores[d.id]}`).join(', ')} className="block overflow-visible">
       <line x1={0} x2={w} y1={h + 0.5} y2={h + 0.5} className="stroke-rule-strong" strokeWidth={1} />
@@ -973,7 +1017,7 @@ const ScoreProfile = memo(function ScoreProfile({ scores, highlight }: { scores:
             <title>{`${d.label}: ${v}`}</title>
             {/* invisible hit target taller than the mark */}
             <rect x={x - gap / 2} y={0} width={bw + gap} height={h} fill="transparent" />
-            <rect x={x} y={h - bh} width={bw} height={bh} rx={1} className={highlight === d.id ? 'fill-oxblood' : 'fill-rule-strong group-hover/profile:fill-ink-2'} />
+            <rect x={x} y={h - bh} width={bw} height={bh} rx={1} className={highlight === d.id ? 'fill-oxblood' : top.has(d.id) ? 'fill-ink-2' : 'fill-rule-strong group-hover/profile:fill-ink-2'} />
           </g>
         );
       })}
@@ -1134,9 +1178,20 @@ function ControlPanel({
   const activeCount = filters.categories.length + filters.tiers.length + (filters.country ? 1 : 0) + (filters.minScore > 0 ? 1 : 0) + (filters.stockist ? 1 : 0);
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setFilters((f) => ({ ...f, [k]: v }));
   const toggleIn = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-  const setSort = (k: SortKey) => setFilters((f) => ({ ...f, sort: k, dir: defaultDir(k) }));
-  const flipDir = () => set('dir', filters.dir === 'desc' ? 'asc' : 'desc');
+  const setSort = (v: string) => {
+    const [key, dir] = v.split(':') as [SortKey, SortDir];
+    setFilters((f) => ({ ...f, sort: key, dir }));
+  };
   const isDirty = activeCount > 0 || filters.query !== '';
+  const countryName = facets.countries.find((c) => c.code === filters.country)?.name ?? filters.country;
+  // every active filter as a removable chip, so the collapsed panel never hides state
+  const activeChips: { key: string; label: string; clear: () => void }[] = [
+    ...filters.categories.map((c) => ({ key: `c-${c}`, label: CATEGORY_BY_ID[c].label, clear: () => set('categories', filters.categories.filter((x) => x !== c)) })),
+    ...filters.tiers.map((t) => ({ key: `t-${t}`, label: TIER_BY_ID[t].label, clear: () => set('tiers', filters.tiers.filter((x) => x !== t)) })),
+    ...(filters.country ? [{ key: 'country', label: countryName, clear: () => set('country', '') }] : []),
+    ...(filters.minScore ? [{ key: 'min', label: `Score ${filters.minScore}+`, clear: () => set('minScore', 0) }] : []),
+    ...(filters.stockist ? [{ key: 'stockist', label: `Often at ${RETAILER_BY_ID[filters.stockist].name}`, clear: () => set('stockist', '') }] : []),
+  ];
 
   return (
     <>
@@ -1166,23 +1221,14 @@ function ControlPanel({
           </label>
           <label className="hidden min-w-0 items-center sm:flex">
             <span className="sr-only">Sort by</span>
-            <SelectBox value={filters.sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-10 w-[11.5rem] text-[13px]">
+            <SelectBox value={sortValue(filters.sort, filters.dir)} onChange={(e) => setSort(e.target.value)} className="h-10 w-[14rem] text-[13px]">
               {SORT_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>
-                  Sort: {o.label}
+                <option key={sortValue(o.key, o.dir)} value={sortValue(o.key, o.dir)}>
+                  {o.label}
                 </option>
               ))}
             </SelectBox>
           </label>
-          <button
-            type="button"
-            onClick={flipDir}
-            aria-label={filters.dir === 'desc' ? 'Sorted descending — switch to ascending' : 'Sorted ascending — switch to descending'}
-            title={filters.dir === 'desc' ? 'Descending' : 'Ascending'}
-            className="hidden h-10 w-10 shrink-0 items-center justify-center border border-rule bg-panel hover:border-ink sm:inline-flex"
-          >
-            {filters.dir === 'desc' ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
-          </button>
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -1202,19 +1248,13 @@ function ControlPanel({
       <div id="facet-panel" hidden={!open} className="space-y-5 border-b border-rule py-5">
         <div className="sm:hidden">
           <Eyebrow className="mb-2">Sort</Eyebrow>
-          <div className="flex gap-2">
-            <SelectBox value={filters.sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-8 flex-1 text-[12px]">
-              {SORT_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </SelectBox>
-            <Chip active={false} onClick={flipDir}>
-              {filters.dir === 'desc' ? <ArrowDown size={13} aria-hidden /> : <ArrowUp size={13} aria-hidden />}
-              {filters.dir === 'desc' ? 'High first' : 'Low first'}
-            </Chip>
-          </div>
+          <SelectBox value={sortValue(filters.sort, filters.dir)} onChange={(e) => setSort(e.target.value)} className="h-8 w-full text-[12px]">
+            {SORT_OPTIONS.map((o) => (
+              <option key={sortValue(o.key, o.dir)} value={sortValue(o.key, o.dir)}>
+                {o.label}
+              </option>
+            ))}
+          </SelectBox>
         </div>
         <div>
           <Eyebrow className="mb-2">Discipline</Eyebrow>
@@ -1271,17 +1311,29 @@ function ControlPanel({
         </div>
       </div>
 
-      <div className="flex items-baseline gap-3 py-3 text-[12px] text-muted">
-        <span aria-live="polite">
+      <div className="flex flex-wrap items-center gap-2 py-3 text-[12px] text-muted">
+        <span aria-live="polite" className="mr-1">
           <span className="tnum text-ink">{nf.format(resultCount)}</span> of <span className="tnum">{nf.format(total)}</span> brands
         </span>
+        {activeChips.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={c.clear}
+            aria-label={`Remove filter: ${c.label}`}
+            className="inline-flex h-7 items-center gap-1.5 border border-rule bg-panel pr-1.5 pl-2.5 text-ink-2 transition-colors hover:border-ink hover:text-ink"
+          >
+            {c.label}
+            <X size={12} aria-hidden />
+          </button>
+        ))}
         {isDirty && (
           <button
             type="button"
             onClick={() => setFilters((f) => ({ ...DEFAULT_FILTERS, sort: f.sort, dir: f.dir }))}
-            className="text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink hover:decoration-ink"
+            className="ml-1 text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink hover:decoration-ink"
           >
-            Reset
+            Clear all
           </button>
         )}
       </div>
@@ -1291,7 +1343,7 @@ function ControlPanel({
 
 /* ---------- leaderboard (virtualised) ---------- */
 
-const ROW_HEIGHT = 76;
+const ROW_HEIGHT = 64;
 
 function useWindowVirtual(count: number, rowHeight: number, overscan = 8) {
   const ref = useRef<HTMLDivElement>(null);
@@ -1347,7 +1399,7 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
   const open = () => onOpen(b.id);
   return (
     <div className={cx('group relative grid h-full items-center gap-x-3 border-b border-rule px-1 transition-colors hover:bg-panel sm:px-4 md:gap-x-4', LEADER_COLS)}>
-      <RankBadge rank={b.rank} />
+      <RankBadge rank={b.rank} tied={b.tied} />
       <div className="flex min-w-0 items-center gap-3">
         <span className="hidden sm:inline-flex">
           <Monogram name={b.name} />
@@ -1377,7 +1429,11 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
       </div>
       <div className="hidden min-w-0 md:block">
         <CategoryLabel category={b.category} className="max-w-full text-[13px] text-ink-2" />
-        <div>
+        <div className="flex items-center gap-1.5 text-[11.5px] text-muted">
+          <span className="tnum" title={`Rank ${b.categoryRank} of ${b.categoryCount} in ${CATEGORY_BY_ID[b.category].label}`}>
+            #{b.categoryRank} of {b.categoryCount}
+          </span>
+          <span aria-hidden>·</span>
           <TierMark tier={b.tier} />
         </div>
       </div>
@@ -1395,15 +1451,15 @@ function LeaderHeader() {
     <div
       aria-hidden
       className={cx(
-        'sticky top-16 z-20 hidden items-center gap-x-4 border-b border-ink bg-paper/95 px-4 py-2 text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase backdrop-blur md:grid',
+        'sticky top-16 z-20 hidden items-center gap-x-4 border-b border-ink bg-paper/95 px-4 py-2 text-[12px] font-medium text-muted backdrop-blur md:grid',
         LEADER_COLS,
       )}
     >
       <span>Rank</span>
       <span>Brand</span>
       <span title="Composite index score, shaded by band: navy above the catalogue median, oxblood below.">Score</span>
-      <span>Discipline · Tier</span>
-      <span className="hidden lg:block" title="Eight dimension scores, in methodology order. Hover a profile for the values.">
+      <span title="Discipline, rank within it, and market tier">Discipline</span>
+      <span className="hidden lg:block" title="Eight dimension scores in methodology order; the two strongest are dark. Hover for values.">
         Profile
       </span>
       <span />
@@ -1870,8 +1926,12 @@ export default function App() {
   const byId = useMemo(() => new Map(ranked.map((b) => [b.id, b])), [ranked]);
 
   const [tab, setTab] = useState<Tab>('index');
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() => filtersFromSearch(window.location.search));
   const deferred = useDeferredValue(filters);
+  useEffect(() => {
+    const next = searchFromFilters(deferred);
+    if (next !== window.location.search) window.history.replaceState(window.history.state, '', window.location.pathname + next + window.location.hash);
+  }, [deferred]);
   const searchRef = useRef<HTMLInputElement>(null);
 
   /* ----- filtering, faceting & sorting (single pass over the catalogue) ----- */
@@ -1922,6 +1982,7 @@ export default function App() {
         if (bx !== by) return by - bx;
       }
       if (key === 'name') return dir * x.b.name.localeCompare(y.b.name);
+      if (key === 'categoryRank') return dir * (x.b.categoryRank - y.b.categoryRank) || x.b.rank - y.b.rank;
       if (key === 'founded') {
         const fx = x.b.founded;
         const fy = y.b.founded;
