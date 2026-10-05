@@ -54,7 +54,7 @@ The pipeline combines three record sources, attaches stockist flags, and validat
 1. **Curated seed:** 53 detailed records. These are parsed from the `/* @seed:begin */ … /* @seed:end */` JSON block in `App.tsx`, so the app's fallback and the dataset never diverge. The block must stay strict JSON.
 2. **Curated roster:** 947 more real brands, stored as compact editorial rows in [`scripts/roster.mjs`](scripts/roster.mjs). Where a founding year or city isn't confidently known it is `null`, never guessed. Lesser-documented brands carry confidence 0.70–0.75 so their composites are shrunk toward the prior. A duplicate brand is skipped with a warning, and `--strict` fails the build on any duplicate.
 3. **Ingestion** (`--input`, repeatable): a JSON array, a dataset envelope, or NDJSON. Records are coerced (names → slugs, country codes → names, string signatures → objects), validated and reported. An ingested record overrides an existing record with the same `id`. See `docs/example-input.ndjson`.
-4. **Stockists:** [`scripts/stockists.mjs`](scripts/stockists.mjs) maps retailers to brand ids, for example the 270 brands flagged "Often at TK Maxx". The generator attaches them as `stockists` after all sources merge, and `--strict` fails on an id that doesn't resolve. The app's "Often at TK Maxx" filter, the retailer link under each **Buy at** figure and the dossier's "Where to look" list read from this field. The buy-at discount itself is derived from scores (METHODOLOGY.md §2.4).
+4. **Stockists:** [`scripts/stockists.mjs`](scripts/stockists.mjs) maps retailers to brand ids, for example the 270 brands flagged "Often at TK Maxx". The generator attaches them as `stockists` after all sources merge, and `--strict` fails on an id that doesn't resolve. The app's "Often at TK Maxx" filter and the dossier's stockist link read from this field. The dossier's buy-at discount is derived from scores (METHODOLOGY.md §2.4).
 
 Pass `--date` to make the output byte-for-byte reproducible.
 
@@ -63,5 +63,4 @@ Pass `--date` to make the output byte-for-byte reproducible.
 - One `useMemo` pass handles search, facet counts and filtering over the whole catalogue. `useDeferredValue` keeps typing responsive.
 - **Fuzzy search:** prefix and word matching, bounded Damerau-Levenshtein for typos ("andersen shepard" → Anderson & Sheppard), subsequence matching, diacritic folding, and AND semantics across query tokens.
 - **Leaderboard:** window-virtualised with fixed 76 px rows, so only about 20 DOM rows exist however large the catalogue grows (tested at 2,000).
-- **Grid:** paged in blocks of 48, loaded by an IntersectionObserver.
 - Bookmarks and the personal tier list (S/A/B/C) live in `localStorage`, sync across tabs, and fail safe when storage is unavailable.

@@ -30,13 +30,9 @@ import {
   Check,
   ChevronDown,
   Copy,
-  Database,
   Footprints,
   GraduationCap,
   Hammer,
-  Info,
-  LayoutGrid,
-  LayoutList,
   Layers,
   MountainSnow,
   PenTool,
@@ -274,13 +270,6 @@ const RETAILERS: RetailerDef[] = [
   { id: 'tkmaxx', name: 'TK Maxx', note: 'Off-price · stock changes daily', search: (q) => `https://www.tkmaxx.com/uk/en/search?text=${encodeURIComponent(q)}` },
 ];
 const RETAILER_BY_ID = Object.fromEntries(RETAILERS.map((r) => [r.id, r])) as Record<RetailerId, RetailerDef>;
-
-/** Open-market searches offered for every brand, flagged or not. */
-const SHOP_SEARCHES: { id: string; name: string; note: string; url: (brand: string) => string }[] = [
-  { id: 'shopping', name: 'Google Shopping', note: 'Compare current stockists and prices', url: (q) => `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(`${q} mens`)}` },
-  { id: 'ebay', name: 'eBay UK', note: 'New and pre-owned', url: (q) => `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(q)}` },
-  { id: 'vinted', name: 'Vinted', note: 'Pre-owned', url: (q) => `https://www.vinted.co.uk/catalog?search_text=${encodeURIComponent(q)}` },
-];
 
 /** Retailer search boxes match a plain apostrophe more reliably than a typographic one. */
 const searchTerm = (name: string) => name.replace(/[‘’]/g, "'");
@@ -727,7 +716,6 @@ interface SavedEntry {
 type SavedMap = Record<string, SavedEntry>;
 
 const SAVED_KEY = 'menswear-index:saved:v1';
-const VIEW_KEY = 'menswear-index:view:v1';
 
 const PERSONAL_TIERS: { id: PersonalTier; label: string; hint: string }[] = [
   { id: 'S', label: 'Grail', hint: 'The pinnacle — worth saving for' },
@@ -794,15 +782,6 @@ function useSaved() {
   return { saved, toggle, setTier, remove, clear };
 }
 
-function readPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  try {
-    const v = localStorage.getItem(key);
-    return v && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 /* ================================================================== */
 /* §8  UI COMPONENTS                                                   */
 /* ================================================================== */
@@ -818,15 +797,14 @@ interface Filters {
   minScore: number;
   /** Retailer id, or '' for any. */
   stockist: RetailerId | '';
-  savedOnly: boolean;
   sort: SortKey;
   dir: SortDir;
 }
 
-const DEFAULT_FILTERS: Filters = { query: '', categories: [], tiers: [], country: '', minScore: 0, stockist: '', savedOnly: false, sort: 'composite', dir: 'desc' };
+const DEFAULT_FILTERS: Filters = { query: '', categories: [], tiers: [], country: '', minScore: 0, stockist: '', sort: 'composite', dir: 'desc' };
 
 /** Thresholds offered by the minimum-score filter (catalogue median sits around 67). */
-const MIN_SCORE_OPTIONS = [0, 60, 65, 70, 75, 80];
+const MIN_SCORE_OPTIONS = [0, 60, 70, 80];
 
 const SORT_OPTIONS: { id: SortKey; label: string }[] = [
   { id: 'composite', label: 'Index score' },
@@ -848,51 +826,24 @@ function originLine(b: Brand) {
 /* ---------- atoms ---------- */
 
 /** Typographic rank numeral: the top ten in ink, the rest recede so the name and score lead. */
-function RankBadge({ rank, large = false }: { rank: number; large?: boolean }) {
+function RankBadge({ rank }: { rank: number }) {
   return (
-    <span
-      aria-label={`Rank ${rank}`}
-      className={cx('tnum shrink-0 font-serif leading-none', large ? 'text-[44px]' : 'text-[20px] md:text-[22px]', rank <= 10 ? 'text-ink' : 'text-muted')}
-    >
+    <span aria-label={`Rank ${rank}`} className={cx('tnum shrink-0 font-serif text-[20px] leading-none md:text-[22px]', rank <= 10 ? 'text-ink' : 'text-muted')}>
       {String(rank).padStart(2, '0')}
     </span>
   );
 }
 
 /** Composite score as a filled tile coloured by band (see SCORE_BANDS). */
-function ScoreTile({ value, size = 'row' }: { value: number; size?: 'row' | 'card' }) {
+function ScoreTile({ value }: { value: number }) {
   const band = scoreBand(value);
   return (
     <span
       title={`${band.label} · ${value.toFixed(1)}`}
-      className={cx(
-        'tnum inline-flex shrink-0 items-center justify-center font-serif leading-none',
-        size === 'row' ? 'h-[38px] w-[60px] text-[22px]' : 'h-[56px] w-[88px] text-[34px]',
-        band.tile,
-      )}
+      className={cx('tnum inline-flex h-[38px] w-[60px] shrink-0 items-center justify-center font-serif text-[22px] leading-none', band.tile)}
     >
       {value.toFixed(1)}
     </span>
-  );
-}
-
-/** Compact key for the score colours, highest band last so it reads like the scale. */
-function ScoreKey() {
-  return (
-    <div className="flex items-center gap-2" aria-label="Score colour key">
-      <span className="text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase">Score</span>
-      <ol className="flex">
-        {[...SCORE_BANDS].reverse().map((b, i, arr) => (
-          <li
-            key={b.min}
-            title={`${b.label}: ${b.min === 0 ? `under ${arr[i + 1].min}` : i === arr.length - 1 ? `${b.min}+` : `${b.min}–${arr[i + 1].min}`}`}
-            className={cx('tnum flex h-[18px] w-7 items-center justify-center text-[9.5px]', b.tile)}
-          >
-            {b.min === 0 ? `<${arr[i + 1].min}` : b.min}
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }
 
@@ -914,23 +865,22 @@ function monogramOf(name: string): string {
 }
 
 /**
- * Brand mark: a generated monogram in a stitched woven-label plate. Real logos
+ * Brand mark: a generated monogram on a quiet plate. Real logos
  * are trademarks, would need a network fetch per brand and would clash in
  * style; a monogram gives each row its own shape without any of that.
  */
-const Monogram = memo(function Monogram({ name, size = 'row' }: { name: string; size?: 'row' | 'card' | 'large' }) {
+const Monogram = memo(function Monogram({ name, size = 'row' }: { name: string; size?: 'row' | 'large' }) {
   const m = monogramOf(name);
-  const dims = { row: 'h-10 w-10', card: 'h-12 w-12', large: 'h-16 w-16' }[size];
+  const dims = { row: 'h-10 w-10', large: 'h-16 w-16' }[size];
   const font = {
     row: ['text-[19px]', 'text-[16px]', 'text-[12px]'],
-    card: ['text-[23px]', 'text-[19px]', 'text-[15px]'],
     large: ['text-[30px]', 'text-[25px]', 'text-[20px]'],
   }[size][Math.min(m.length, 3) - 1];
   return (
     <span
       aria-hidden
       className={cx(
-        'inline-flex shrink-0 items-center justify-center border border-rule-strong bg-panel font-serif leading-none tracking-[0.02em] text-ink-2 outline-1 -outline-offset-4 outline-rule outline-dashed',
+        'inline-flex shrink-0 items-center justify-center bg-rule/55 font-serif leading-none tracking-[0.02em] text-ink-2',
         dims,
         font,
       )}
@@ -970,7 +920,7 @@ function CategoryLabel({ category, className }: { category: CategoryId; classNam
 function TierMark({ tier }: { tier: TierId }) {
   const t = TIER_BY_ID[tier];
   return (
-    <span className="inline-flex items-center gap-1 border border-rule px-1.5 text-[10.5px] leading-[18px] whitespace-nowrap text-muted" title={`${t.label} · ${t.band}`}>
+    <span className="inline-flex items-center gap-1 text-[11.5px] whitespace-nowrap text-muted" title={`${t.label} · ${t.band}`}>
       {t.label}
       <span className="opacity-75" aria-hidden>
         {t.symbol}
@@ -1005,16 +955,15 @@ const SaveButton = memo(function SaveButton({ saved, onToggle, name, className }
 /**
  * Score profile: one thin bar per dimension, in methodology order.
  * The shape reads at a glance (a "craft" brand vs a "design" brand); exact
- * values are in each bar's tooltip and in the deep-dive.
+ * values are in the hover readout and in the dossier.
  */
-const ScoreProfile = memo(function ScoreProfile({ scores, highlight, labelled = false }: { scores: Record<DimensionId, number>; highlight?: DimensionId; labelled?: boolean }) {
-  const bw = labelled ? 13 : 6;
-  const gap = labelled ? 5 : 2;
-  const h = labelled ? 40 : 26;
-  const labelH = labelled ? 13 : 0;
+const ScoreProfile = memo(function ScoreProfile({ scores, highlight }: { scores: Record<DimensionId, number>; highlight?: DimensionId }) {
+  const bw = 6;
+  const gap = 2;
+  const h = 26;
   const w = DIMENSIONS.length * (bw + gap) - gap;
   return (
-    <svg width={w} height={h + labelH} viewBox={`0 0 ${w} ${h + labelH}`} role="img" aria-label={DIMENSIONS.map((d) => `${d.short} ${scores[d.id]}`).join(', ')} className="block overflow-visible">
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={DIMENSIONS.map((d) => `${d.short} ${scores[d.id]}`).join(', ')} className="block overflow-visible">
       <line x1={0} x2={w} y1={h + 0.5} y2={h + 0.5} className="stroke-rule-strong" strokeWidth={1} />
       {DIMENSIONS.map((d, i) => {
         const v = scores[d.id];
@@ -1025,12 +974,7 @@ const ScoreProfile = memo(function ScoreProfile({ scores, highlight, labelled = 
             <title>{`${d.label}: ${v}`}</title>
             {/* invisible hit target taller than the mark */}
             <rect x={x - gap / 2} y={0} width={bw + gap} height={h} fill="transparent" />
-            <rect x={x} y={h - bh} width={bw} height={bh} rx={1} className={highlight === d.id ? 'fill-oxblood' : 'fill-ink-2'} />
-            {labelled && (
-              <text x={x + bw / 2} y={h + labelH - 1} textAnchor="middle" className={cx('text-[8px] font-semibold tracking-wide', highlight === d.id ? 'fill-oxblood' : 'fill-muted')}>
-                {d.abbr}
-              </text>
-            )}
+            <rect x={x} y={h - bh} width={bw} height={bh} rx={1} className={highlight === d.id ? 'fill-oxblood' : 'fill-rule-strong group-hover/profile:fill-ink-2'} />
           </g>
         );
       })}
@@ -1064,33 +1008,6 @@ function ProfileHover({ scores, highlight, onOpen }: { scores: Record<DimensionI
           ))}
         </ul>
       </div>
-    </div>
-  );
-}
-
-const buyAtTitle = (b: RankedBrand) => `Instant buy at ${b.buyAt}% off RRP or more`;
-
-/** Buy-at threshold, plus a search link when the brand is flagged at a retailer. */
-function BuyAt({ brand: b, align = 'left' }: { brand: RankedBrand; align?: 'left' | 'right' }) {
-  const r = b.stockists?.length ? RETAILER_BY_ID[b.stockists[0]] : null;
-  return (
-    <div className={cx('min-w-0', align === 'right' && 'text-right')}>
-      <div className="tnum whitespace-nowrap" title={buyAtTitle(b)}>
-        <span className="font-serif text-[22px] leading-none">{b.buyAt}%</span> <span className="text-[11px] text-muted">off</span>
-      </div>
-      {r && (
-        <a
-          href={r.search(searchTerm(b.name))}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          title={`Search ${r.name} for ${b.name} (opens in a new tab)`}
-          className="relative z-10 mt-0.5 inline-flex items-center gap-0.5 text-[11.5px] text-ink-2 underline decoration-rule-strong underline-offset-2 hover:text-ink hover:decoration-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-        >
-          {r.name}
-          <ArrowUpRight size={11} strokeWidth={1.8} aria-hidden />
-        </a>
-      )}
     </div>
   );
 }
@@ -1137,16 +1054,7 @@ function SelectBox({ active = false, className, children, ...props }: React.Sele
 
 /* ---------- masthead ---------- */
 
-function Masthead({ ranked, data, tab, setTab, savedCount }: { ranked: RankedBrand[]; data: DataState; tab: Tab; setTab: (t: Tab) => void; savedCount: number }) {
-  const stats = useMemo(() => {
-    const sorted = ranked.map((b) => b.composite).sort((a, b) => a - b);
-    return {
-      total: ranked.length,
-      disciplines: new Set(ranked.map((b) => b.category)).size,
-      countries: new Set(ranked.map((b) => b.origin.countryCode)).size,
-      median: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0,
-    };
-  }, [ranked]);
+function Masthead({ data, tab, setTab, savedCount }: { data: DataState; tab: Tab; setTab: (t: Tab) => void; savedCount: number }) {
   const tabs: { id: Tab; label: string; badge?: number }[] = [
     { id: 'index', label: 'The Index' },
     { id: 'list', label: 'My List', badge: savedCount },
@@ -1155,41 +1063,18 @@ function Masthead({ ranked, data, tab, setTab, savedCount }: { ranked: RankedBra
   return (
     <header className="border-b border-ink">
       <div className="mx-auto max-w-[1360px] px-4 sm:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule py-2.5 text-[11px] tracking-[0.14em] text-muted uppercase">
-          <span>Methodology v{METHODOLOGY_VERSION} · Edition {new Date().getFullYear()}</span>
-          <span className="inline-flex items-center gap-1.5 normal-case tracking-normal">
-            <Database size={12} aria-hidden />
-            {data.status === 'loading' ? (
-              <span>Loading full index…</span>
-            ) : data.source === 'remote' ? (
-              <span>brands.json{data.generatedAt ? ` · ${data.generatedAt.slice(0, 10)}` : ''}</span>
-            ) : (
-              <span title={data.error}>Embedded sample (brands.json unavailable)</span>
-            )}
-          </span>
-        </div>
-        <div className="grid gap-6 py-8 sm:py-12 lg:grid-cols-[1fr_auto] lg:items-end">
-          <div>
-            <h1 className="font-serif text-[clamp(2.75rem,8vw,6.25rem)] leading-[0.92] tracking-[-0.01em]">
-              The Menswear <em className="italic">Index</em>
-            </h1>
-            <p className="mt-4 max-w-xl font-serif text-xl leading-snug text-ink-2 italic sm:text-2xl">
-              A quantitative ranking of houses, ateliers and labels — weighted for what lasts.
+        <div className="pt-10 pb-8 sm:pt-14 sm:pb-10">
+          <h1 className="font-serif text-[clamp(2.75rem,7vw,5.25rem)] leading-[0.92] tracking-[-0.01em]">
+            The Menswear <em className="italic">Index</em>
+          </h1>
+          <p className="mt-3 max-w-xl font-serif text-xl leading-snug text-ink-2 italic sm:text-2xl">
+            Houses, ateliers and labels, ranked for what lasts.
+          </p>
+          {data.status === 'ready' && data.source === 'embedded' && (
+            <p className="mt-3 text-[12px] text-oxblood" title={data.error}>
+              Showing the built-in sample: the full index (brands.json) could not be loaded.
             </p>
-          </div>
-          <dl className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4 lg:gap-x-10">
-            {[
-              ['Brands', nf.format(stats.total)],
-              ['Disciplines', nf.format(stats.disciplines)],
-              ['Countries', nf.format(stats.countries)],
-              ['Median score', stats.median.toFixed(1)],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <dt className="text-[10.5px] font-semibold tracking-[0.18em] text-muted uppercase">{k}</dt>
-                <dd className="tnum mt-1 font-serif text-3xl">{v}</dd>
-              </div>
-            ))}
-          </dl>
+          )}
         </div>
         <nav aria-label="Sections" className="-mb-px flex gap-6">
           {tabs.map((t) => (
@@ -1228,8 +1113,6 @@ function ControlPanel({
   facets,
   resultCount,
   total,
-  view,
-  setView,
   searchRef,
 }: {
   filters: Filters;
@@ -1237,23 +1120,22 @@ function ControlPanel({
   facets: Facets;
   resultCount: number;
   total: number;
-  view: View;
-  setView: (v: View) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
 }) {
   const [open, setOpen] = useState(false);
-  const activeCount =
-    filters.categories.length + filters.tiers.length + (filters.country ? 1 : 0) + (filters.minScore > 0 ? 1 : 0) + (filters.stockist ? 1 : 0) + (filters.savedOnly ? 1 : 0);
+  const activeCount = filters.categories.length + filters.tiers.length + (filters.country ? 1 : 0) + (filters.minScore > 0 ? 1 : 0) + (filters.stockist ? 1 : 0);
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setFilters((f) => ({ ...f, [k]: v }));
   const toggleIn = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  const setSort = (k: SortKey) => setFilters((f) => ({ ...f, sort: k, dir: defaultDir(k) }));
+  const flipDir = () => set('dir', filters.dir === 'desc' ? 'asc' : 'desc');
   const isDirty = activeCount > 0 || filters.query !== '';
 
   return (
     <>
-      {/* sticky search & sort bar */}
+      {/* sticky search, sort and filter toggle */}
       <div className="sticky top-0 z-30 border-b border-rule bg-paper/95 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-2 py-3 sm:flex-nowrap sm:gap-3">
-          <label className="relative order-1 flex min-w-0 flex-1 basis-full items-center sm:basis-auto">
+        <div className="flex items-center gap-2 py-3 sm:gap-3">
+          <label className="relative flex min-w-0 flex-1 items-center">
             <span className="sr-only">Search brands, signature pieces, cities, tags</span>
             <Search size={16} className="pointer-events-none absolute left-3 text-muted" aria-hidden />
             <input
@@ -1261,10 +1143,10 @@ function ControlPanel({
               type="search"
               value={filters.query}
               onChange={(e) => set('query', e.target.value)}
-              placeholder="Search brands, signature pieces, places…"
+              placeholder="Search brands…"
               autoComplete="off"
               spellCheck={false}
-              className="h-10 w-full border border-rule bg-panel pr-16 pl-9 text-[14px] placeholder:text-muted/80 focus:border-ink focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+              className="h-10 w-full border border-rule bg-panel pr-10 pl-9 text-[14px] placeholder:text-muted/80 focus:border-ink focus:outline-none [&::-webkit-search-cancel-button]:hidden"
             />
             {filters.query ? (
               <button type="button" onClick={() => set('query', '')} aria-label="Clear search" className="absolute right-2 inline-flex h-7 w-7 items-center justify-center text-muted hover:text-ink">
@@ -1274,78 +1156,61 @@ function ControlPanel({
               <kbd className="pointer-events-none absolute right-3 hidden border border-rule px-1.5 text-[11px] text-muted sm:inline">/</kbd>
             )}
           </label>
-
-          <div className="order-2 flex min-w-0 items-center gap-2">
-            <label className="flex min-w-0 items-center">
-              <span className="sr-only">Sort by</span>
-              <SelectBox
-                value={filters.sort}
-                onChange={(e) => {
-                  const k = e.target.value as SortKey;
-                  setFilters((f) => ({ ...f, sort: k, dir: defaultDir(k) }));
-                }}
-                className="h-10 w-full max-w-[9.5rem] text-[13px] sm:max-w-[11.5rem]"
-              >
-                {SORT_OPTIONS.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    Sort: {o.label}
-                  </option>
-                ))}
-              </SelectBox>
-            </label>
-            <button
-              type="button"
-              onClick={() => set('dir', filters.dir === 'desc' ? 'asc' : 'desc')}
-              aria-label={filters.dir === 'desc' ? 'Sorted descending — switch to ascending' : 'Sorted ascending — switch to descending'}
-              title={filters.dir === 'desc' ? 'Descending' : 'Ascending'}
-              className="inline-flex h-10 w-10 items-center justify-center border border-rule bg-panel hover:border-ink"
-            >
-              {filters.dir === 'desc' ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
-            </button>
-          </div>
-
-          <div className="order-3 ml-auto flex items-center gap-2 sm:ml-0">
-            <button
-              type="button"
-              onClick={() => setOpen((o) => !o)}
-              aria-expanded={open}
-              aria-controls="facet-panel"
-              aria-label="Filters"
-              className="inline-flex h-10 items-center gap-2 border border-rule bg-panel px-2.5 text-[13px] hover:border-ink md:hidden"
-            >
-              <SlidersHorizontal size={15} />
-              <span className="hidden sm:inline">Filters</span>
-              {activeCount > 0 && <span className="tnum bg-ink px-1.5 text-[10px] text-paper">{activeCount}</span>}
-            </button>
-            <div className="inline-flex border border-rule bg-panel" role="group" aria-label="Layout">
-              {(
-                [
-                  ['list', LayoutList, 'Leaderboard'],
-                  ['grid', LayoutGrid, 'Grid'],
-                ] as const
-              ).map(([v, Icon, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setView(v)}
-                  aria-pressed={view === v}
-                  aria-label={label}
-                  title={label}
-                  className={cx('inline-flex h-[38px] w-10 items-center justify-center', view === v ? 'bg-ink text-paper' : 'text-muted hover:text-ink')}
-                >
-                  <Icon size={16} />
-                </button>
+          <label className="hidden min-w-0 items-center sm:flex">
+            <span className="sr-only">Sort by</span>
+            <SelectBox value={filters.sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-10 w-[11.5rem] text-[13px]">
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  Sort: {o.label}
+                </option>
               ))}
-            </div>
-          </div>
+            </SelectBox>
+          </label>
+          <button
+            type="button"
+            onClick={flipDir}
+            aria-label={filters.dir === 'desc' ? 'Sorted descending — switch to ascending' : 'Sorted ascending — switch to descending'}
+            title={filters.dir === 'desc' ? 'Descending' : 'Ascending'}
+            className="hidden h-10 w-10 shrink-0 items-center justify-center border border-rule bg-panel hover:border-ink sm:inline-flex"
+          >
+            {filters.dir === 'desc' ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-controls="facet-panel"
+            aria-label="Filters"
+            className={cx('inline-flex h-10 shrink-0 items-center gap-2 border px-3 text-[13px] transition-colors', open ? 'border-ink bg-ink text-paper' : 'border-rule bg-panel hover:border-ink')}
+          >
+            <SlidersHorizontal size={15} aria-hidden />
+            <span className="hidden sm:inline">Filters</span>
+            {activeCount > 0 && <span className={cx('tnum px-1.5 text-[10px]', open ? 'bg-paper text-ink' : 'bg-ink text-paper')}>{activeCount}</span>}
+          </button>
         </div>
       </div>
 
-      {/* facets */}
-      <div id="facet-panel" className={cx('space-y-4 border-b border-rule py-5', !open && 'hidden md:block')}>
+      {/* facets: collapsed until asked for, so the table leads */}
+      <div id="facet-panel" hidden={!open} className="space-y-5 border-b border-rule py-5">
+        <div className="sm:hidden">
+          <Eyebrow className="mb-2">Sort</Eyebrow>
+          <div className="flex gap-2">
+            <SelectBox value={filters.sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-8 flex-1 text-[12px]">
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </SelectBox>
+            <Chip active={false} onClick={flipDir}>
+              {filters.dir === 'desc' ? <ArrowDown size={13} aria-hidden /> : <ArrowUp size={13} aria-hidden />}
+              {filters.dir === 'desc' ? 'High first' : 'Low first'}
+            </Chip>
+          </div>
+        </div>
         <div>
           <Eyebrow className="mb-2">Discipline</Eyebrow>
-          <div className="scrollbar-none -mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:-mx-8 sm:px-8 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
+          <div className="flex flex-wrap gap-1.5">
             {CATEGORIES.map((c) => (
               <Chip key={c.id} active={filters.categories.includes(c.id)} count={facets.categoryCounts[c.id]} onClick={() => set('categories', toggleIn(filters.categories, c.id))}>
                 {c.label}
@@ -1353,7 +1218,7 @@ function ControlPanel({
             ))}
           </div>
         </div>
-        <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-5">
           <div role="group" aria-label="Market tier">
             <Eyebrow className="mb-2">Market tier</Eyebrow>
             <div className="flex flex-wrap gap-1.5">
@@ -1385,40 +1250,32 @@ function ControlPanel({
               ))}
             </div>
           </div>
+          <div role="group" aria-label="Stockist">
+            <Eyebrow className="mb-2">Stockist</Eyebrow>
+            <div className="flex flex-wrap gap-1.5">
+              {RETAILERS.map((r) => (
+                <Chip key={r.id} active={filters.stockist === r.id} count={facets.stockistCounts[r.id]} onClick={() => set('stockist', filters.stockist === r.id ? '' : r.id)}>
+                  Often at {r.name}
+                </Chip>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* result line: count + reset on the left, quick "show" toggles on the right */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 text-[12px] text-muted">
-        <span className="flex flex-wrap items-baseline gap-x-3">
-          <span aria-live="polite">
-            <span className="tnum text-ink">{nf.format(resultCount)}</span> of <span className="tnum">{nf.format(total)}</span> brands
-          </span>
-          {isDirty && (
-            <button
-              type="button"
-              onClick={() => setFilters((f) => ({ ...DEFAULT_FILTERS, sort: f.sort, dir: f.dir }))}
-              className="inline-flex items-center gap-1 text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink hover:decoration-ink"
-            >
-              <RotateCcw size={11} aria-hidden /> Reset filters
-            </button>
-          )}
+      <div className="flex items-baseline gap-3 py-3 text-[12px] text-muted">
+        <span aria-live="polite">
+          <span className="tnum text-ink">{nf.format(resultCount)}</span> of <span className="tnum">{nf.format(total)}</span> brands
         </span>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <div className="hidden md:block">
-          <ScoreKey />
-        </div>
-        <div role="group" aria-label="Show only" className="flex flex-wrap gap-1.5">
-          {RETAILERS.map((r) => (
-            <Chip key={r.id} active={filters.stockist === r.id} count={facets.stockistCounts[r.id]} onClick={() => set('stockist', filters.stockist === r.id ? '' : r.id)}>
-              Often at {r.name}
-            </Chip>
-          ))}
-          <Chip active={filters.savedOnly} onClick={() => set('savedOnly', !filters.savedOnly)}>
-            <Bookmark size={12} /> Saved only
-          </Chip>
-        </div>
-        </div>
+        {isDirty && (
+          <button
+            type="button"
+            onClick={() => setFilters((f) => ({ ...DEFAULT_FILTERS, sort: f.sort, dir: f.dir }))}
+            className="text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink hover:decoration-ink"
+          >
+            Reset
+          </button>
+        )}
       </div>
     </>
   );
@@ -1467,15 +1324,15 @@ interface ItemProps {
 
 /**
  * One column template shared by the header and every row, so headers can't
- * drift from their cells. Score sits straight after the brand, with Buy at
- * beside it: the two numbers a reader acts on. Columns appear as width allows:
- *   base  rank · brand · score · save        (buy-at beneath the score)
- *   md    + buy at · discipline/tier
+ * drift from their cells. Score sits straight after the brand, where the eye
+ * lands. Columns appear as width allows:
+ *   base  rank · brand · score · save
+ *   md    + discipline/tier
  *   lg    + profile
  *   xl    + signature
  */
 const LEADER_COLS =
-  'grid-cols-[32px_minmax(0,1fr)_auto_36px] md:grid-cols-[52px_minmax(0,2fr)_72px_96px_minmax(0,1.2fr)_40px] lg:grid-cols-[52px_minmax(0,2fr)_72px_96px_minmax(0,1.2fr)_88px_40px] xl:grid-cols-[52px_minmax(0,2fr)_72px_96px_minmax(0,1.2fr)_88px_minmax(0,1.4fr)_40px]';
+  'grid-cols-[32px_minmax(0,1fr)_auto_36px] md:grid-cols-[52px_minmax(0,2fr)_72px_minmax(0,1.2fr)_40px] lg:grid-cols-[52px_minmax(0,2fr)_72px_minmax(0,1.2fr)_88px_40px] xl:grid-cols-[52px_minmax(0,2fr)_72px_minmax(0,1.2fr)_88px_minmax(0,1.4fr)_40px]';
 
 const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, onToggle }: ItemProps) {
   const dim = (DIMENSION_IDS as readonly string[]).includes(sortKey) ? (sortKey as DimensionId) : undefined;
@@ -1504,25 +1361,14 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
       </div>
       <div className="flex flex-col items-end md:items-start">
         <ScoreTile value={b.composite} />
-        {dim ? (
+        {dim && (
           <div className="tnum mt-1 text-[11px] font-medium text-ink-2">
             {DIM_BY_ID[dim].abbr} {b.scores[dim]}
           </div>
-        ) : (
-          <>
-            {/* phones have no Buy at column, so the threshold takes the percentile's place */}
-            <div className="tnum mt-1 text-[11px] whitespace-nowrap text-ink-2 md:hidden" title={buyAtTitle(b)}>
-              buy at {b.buyAt}% off
-            </div>
-            <div className="tnum mt-1 hidden text-[11px] text-muted md:block">top {Math.max(1, 100 - b.percentile)}%</div>
-          </>
         )}
       </div>
-      <div className="hidden md:block">
-        <BuyAt brand={b} />
-      </div>
       <div className="hidden min-w-0 md:block">
-        <CategoryLabel category={b.category} className="mb-1 max-w-full text-[13px] text-ink-2" />
+        <CategoryLabel category={b.category} className="max-w-full text-[13px] text-ink-2" />
         <div>
           <TierMark tier={b.tier} />
         </div>
@@ -1532,7 +1378,6 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
       </div>
       <div className="hidden min-w-0 xl:block">
         <div className="truncate text-[13.5px] text-ink-2">{b.signatures[0]?.name ?? '—'}</div>
-        {b.signatures.length > 1 && <div className="truncate text-[11.5px] text-muted">+ {b.signatures.slice(1).map((s) => s.name).join(', ')}</div>}
       </div>
       <SaveButton saved={saved} onToggle={() => onToggle(b.id)} name={b.name} className="justify-self-end" />
     </div>
@@ -1551,13 +1396,10 @@ function LeaderHeader() {
     >
       <span>Rank</span>
       <span>Brand</span>
-      <span title="Composite index score, coloured by band. Navy is above the catalogue median, oxblood below; see the key above the table.">Score</span>
-      <span className="inline-flex items-center gap-1" title="The discount off RRP at which this brand is an instant buy. Derived from its index score and value integrity; see Methodology.">
-        Buy at <Info size={11} strokeWidth={2} aria-hidden />
-      </span>
+      <span title="Composite index score, shaded by band: navy above the catalogue median, oxblood below.">Score</span>
       <span>Discipline · Tier</span>
-      <span className="hidden items-center gap-1 lg:inline-flex" title="Eight dimension scores, in methodology order. Hover a profile for the values.">
-        Profile <Info size={11} strokeWidth={2} aria-hidden />
+      <span className="hidden lg:block" title="Eight dimension scores, in methodology order. Hover a profile for the values.">
+        Profile
       </span>
       <span className="hidden xl:block">Signature</span>
       <span />
@@ -1578,88 +1420,6 @@ function Leaderboard({ items, saved, sortKey, onOpen, onToggle }: { items: Ranke
           </div>
         ))}
       </div>
-    </>
-  );
-}
-
-/* ---------- grid (paged infinite scroll) ---------- */
-
-const GRID_PAGE = 48;
-
-const BrandCard = memo(function BrandCard({ brand: b, saved, sortKey, onOpen, onToggle }: ItemProps) {
-  const dim = (DIMENSION_IDS as readonly string[]).includes(sortKey) ? (sortKey as DimensionId) : undefined;
-  return (
-    <article className="group relative flex flex-col border border-rule bg-panel p-5 transition-colors hover:border-ink">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Monogram name={b.name} size="card" />
-          <RankBadge rank={b.rank} />
-        </div>
-        <SaveButton saved={saved} onToggle={() => onToggle(b.id)} name={b.name} className="-mt-1 -mr-1.5" />
-      </div>
-      <h3 className="mt-4">
-        <button type="button" onClick={() => onOpen(b.id)} className="text-left font-serif text-[28px] leading-[1.05] after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-ink">
-          {b.name}
-        </button>
-      </h3>
-      <p className="mt-1 text-[12px] text-muted">
-        {originLine(b)}
-        {b.founded ? ` · Est. ${b.founded}` : ''}
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <CategoryLabel category={b.category} className="text-[12.5px] text-ink-2" />
-        <TierMark tier={b.tier} />
-      </div>
-      <div className="mt-5 flex items-end justify-between gap-4 border-t border-rule pt-4">
-        <ScoreProfile scores={b.scores} highlight={dim} labelled />
-        <div className="flex flex-col items-end">
-          <ScoreTile value={b.composite} size="card" />
-          <div className="tnum mt-1.5 text-[11px] text-muted">{dim ? `${DIM_BY_ID[dim].short} ${b.scores[dim]}` : `#${b.categoryRank} in discipline`}</div>
-        </div>
-      </div>
-      <div className="mt-4 flex items-end justify-between gap-4 border-t border-rule pt-3">
-        <p className="min-w-0 text-[12px] text-muted">
-          {b.signatures[0] && (
-            <>
-              <span className="block text-[10.5px] tracking-[0.14em] uppercase">Signature</span>
-              <span className="block truncate text-[13px] text-ink-2">{b.signatures[0].name}</span>
-            </>
-          )}
-        </p>
-        <div className="shrink-0 text-right">
-          <div className="text-[10.5px] tracking-[0.14em] text-muted uppercase">Buy at</div>
-          <BuyAt brand={b} align="right" />
-        </div>
-      </div>
-    </article>
-  );
-});
-
-function GridView({ items, saved, sortKey, onOpen, onToggle }: { items: RankedBrand[]; saved: SavedMap; sortKey: SortKey; onOpen: (id: string) => void; onToggle: (id: string) => void }) {
-  const [limit, setLimit] = useState(GRID_PAGE);
-  const sentinel = useRef<HTMLDivElement>(null);
-  useEffect(() => setLimit(GRID_PAGE), [items]);
-  useEffect(() => {
-    const el = sentinel.current;
-    if (!el || limit >= items.length) return;
-    const io = new IntersectionObserver(([e]) => e.isIntersecting && setLimit((l) => Math.min(items.length, l + GRID_PAGE)), { rootMargin: '900px 0px' });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [items.length, limit]);
-  return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-        {items.slice(0, limit).map((b) => (
-          <BrandCard key={b.id} brand={b} saved={!!saved[b.id]} sortKey={sortKey} onOpen={onOpen} onToggle={onToggle} />
-        ))}
-      </div>
-      {limit < items.length && (
-        <div ref={sentinel} className="flex justify-center py-10">
-          <button type="button" onClick={() => setLimit((l) => l + GRID_PAGE)} className="border border-ink px-5 py-2.5 text-[13px] hover:bg-ink hover:text-paper">
-            Show more · {nf.format(items.length - limit)} remaining
-          </button>
-        </div>
-      )}
     </>
   );
 }
@@ -1721,69 +1481,6 @@ function DimensionBars({ brand, medians, weights }: { brand: RankedBrand; median
   );
 }
 
-const gbp = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 });
-
-function BuyAtSection({ brand: b }: { brand: RankedBrand }) {
-  const q = searchTerm(b.name);
-  const flagged = new Set(b.stockists ?? []);
-  const links = [
-    // flagged retailers first, then the remaining registry retailers as plain searches
-    ...[...RETAILERS].sort((x, y) => Number(flagged.has(y.id)) - Number(flagged.has(x.id))).map((r) => ({
-      id: r.id,
-      name: r.name,
-      note: flagged.has(r.id) ? r.note : 'Not a regular stockist, but worth a search',
-      href: r.search(q),
-      flagged: flagged.has(r.id),
-    })),
-    ...SHOP_SEARCHES.map((x) => ({ id: x.id, name: x.name, note: x.note, href: x.url(q), flagged: false })),
-  ];
-  return (
-    <section className="mt-10">
-      <h3 className="mb-3 font-serif text-[26px]">Buy at</h3>
-      <div className="grid gap-5 border border-ink p-5 sm:grid-cols-[auto_1fr] sm:items-center">
-        <div>
-          <div className="tnum font-serif text-[56px] leading-[0.85]">{b.buyAt}%</div>
-          <div className="mt-1 text-[12px] text-muted">off RRP or more</div>
-        </div>
-        <div className="text-[13px] leading-relaxed text-ink-2">
-          <p>
-            An instant buy once the ticket shows at least this discount off the RRP, for anything from {b.name}.
-          </p>
-          <ul className="tnum mt-2 flex flex-wrap gap-x-5 text-[12px] text-muted">
-            {[50, 100, 250].map((rrp) => (
-              <li key={rrp}>
-                RRP {gbp.format(rrp)} → <span className="text-ink">{gbp.format(Math.floor(rrp * (1 - b.buyAt / 100)))}</span> or less
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-[11.5px] text-muted">
-            Set by its index score ({b.composite.toFixed(1)}) and value integrity ({b.scores.value}): the better the brand, the smaller the discount it needs.
-          </p>
-        </div>
-      </div>
-
-      <h4 className="mt-6 mb-2 text-[10.5px] font-semibold tracking-[0.18em] text-muted uppercase">Where to look</h4>
-      <ul className="divide-y divide-rule border-y border-rule">
-        {links.map((l) => (
-          <li key={l.id}>
-            <a href={l.href} target="_blank" rel="noopener noreferrer" className="group/buy flex items-center justify-between gap-4 py-3 hover:bg-panel focus-visible:outline-2 focus-visible:outline-ink">
-              <span className="min-w-0">
-                <span className={cx('block text-[14px]', l.flagged ? 'font-medium text-ink' : 'text-ink-2')}>
-                  {l.name}
-                  {l.flagged && <span className="ml-2 border border-ink px-1 align-[1px] text-[10px] font-normal tracking-wide uppercase">Often stocked</span>}
-                </span>
-                <span className="block text-[12px] text-muted">{l.note}</span>
-              </span>
-              <ArrowUpRight size={16} className="shrink-0 text-muted transition-colors group-hover/buy:text-ink" aria-hidden />
-            </a>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2 text-[11.5px] text-muted">Links open a live search in a new tab. Stockist flags are editorial; off-price stock changes daily.</p>
-    </section>
-  );
-}
-
 function BrandDrawer({
   brand: b,
   total,
@@ -1830,22 +1527,30 @@ function BrandDrawer({
   };
   const cat = CATEGORY_BY_ID[b.category];
   const tier = TIER_BY_ID[b.tier];
-  const facts: [string, ReactNode][] = [
-    ['Founded', b.founded ?? '—'],
-    ['Origin', originLine(b)],
-    ['Discipline', [cat.label, ...(b.subcategories ?? []).map((c) => CATEGORY_BY_ID[c].label)].join(' · ')],
-    ['Tier', `${tier.label} ${tier.symbol} · ${tier.band}`],
-    ['Indicative price', b.priceUSD ? `$${nf.format(b.priceUSD.from)}–${nf.format(b.priceUSD.to)}${b.priceUSD.reference ? ` · ${b.priceUSD.reference}` : ''}` : '—'],
-    ['Production', b.production?.length ? b.production.join(', ') : 'Undisclosed / mixed'],
-    ['Ownership', b.ownership ? `${b.ownership.type.replace('-', ' ')}${b.ownership.parent ? ` · ${b.ownership.parent}` : ''}` : '—'],
-    ['Record', `${b.provenance}${b.updatedAt ? ` · updated ${b.updatedAt}` : ''}`],
-  ];
+  const stockist = b.stockists?.length ? RETAILER_BY_ID[b.stockists[0]] : null;
+  // only facts the header doesn't already state, and only when known
+  const facts = (
+    [
+      ['Discipline', [cat.label, ...(b.subcategories ?? []).map((c) => CATEGORY_BY_ID[c].label)].join(' · ')],
+      ['Tier band', `${tier.label} · ${tier.band}`],
+      b.priceUSD && ['Indicative price', `$${nf.format(b.priceUSD.from)}–${nf.format(b.priceUSD.to)}${b.priceUSD.reference ? ` · ${b.priceUSD.reference}` : ''}`],
+      b.production?.length && ['Production', b.production.join(', ')],
+      b.ownership && ['Ownership', `${b.ownership.type.replace('-', ' ')}${b.ownership.parent ? ` · ${b.ownership.parent}` : ''}`],
+      ['Buy at', <span title="The discount off RRP at which this brand is an instant buy (see Methodology).">{b.buyAt}% off RRP or more</span>],
+      stockist && [
+        'Stockist',
+        <a href={stockist.search(searchTerm(b.name))} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline decoration-rule-strong underline-offset-4 hover:decoration-ink">
+          Often at {stockist.name} <ArrowUpRight size={13} aria-hidden />
+        </a>,
+      ],
+    ] as ([string, ReactNode] | false | undefined | 0)[]
+  ).filter((f): f is [string, ReactNode] => !!f);
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onKeyDown={onKeyDown}>
       <div className="animate-fade-in absolute inset-0 bg-ink/45" onClick={onClose} aria-hidden />
       <div ref={panelRef} className="animate-drawer-in absolute inset-y-0 right-0 flex w-full max-w-[640px] flex-col overflow-y-auto overscroll-contain bg-paper shadow-2xl">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-rule bg-paper/95 px-6 py-3 backdrop-blur sm:px-10">
-          <Eyebrow>Dossier · {cat.label}</Eyebrow>
+          <Eyebrow>Dossier</Eyebrow>
           <button ref={closeRef} type="button" onClick={onClose} aria-label="Close dossier" className="-mr-2 inline-flex h-9 w-9 items-center justify-center hover:bg-rule/50">
             <X size={18} />
           </button>
@@ -1854,7 +1559,6 @@ function BrandDrawer({
         <div className="px-6 pt-8 pb-16 sm:px-10">
           <div className="flex items-center gap-4">
             <Monogram name={b.name} size="large" />
-            <RankBadge rank={b.rank} large />
             <div className="min-w-0 text-[12px] leading-relaxed text-muted">
               <div>
                 Ranked <span className="tnum text-ink">#{b.rank}</span> of <span className="tnum">{nf.format(total)}</span> overall
@@ -1872,20 +1576,12 @@ function BrandDrawer({
             {b.founded ? ` · Est. ${b.founded}` : ''} · <TierMark tier={b.tier} />
           </p>
 
-          <div className="mt-8 grid grid-cols-[auto_1fr] items-end gap-6 border-y border-ink py-6">
-            <div>
-              <Eyebrow>Index score</Eyebrow>
-              <div className="tnum mt-1 font-serif text-[72px] leading-[0.85]">{b.composite.toFixed(1)}</div>
-              <div className="mt-3 flex items-center gap-2 text-[12px] text-muted">
-                <span className={cx('px-1.5 py-0.5 text-[11px] font-medium', scoreBand(b.composite).tile)}>{scoreBand(b.composite).label}</span>
-                Top {Math.max(1, 100 - b.percentile)}% of the catalogue
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <ScoreProfile scores={b.scores} labelled />
-            </div>
-            <div className="tnum col-span-2 font-mono text-[11px] leading-relaxed text-muted">
-              arithmetic {b.arithmetic.toFixed(1)} · geometric {b.geometric.toFixed(1)} → balanced {b.balanced.toFixed(1)} · confidence {b.confidence.toFixed(2)} → <span className="text-ink">{b.composite.toFixed(1)}</span>
+          <div className="mt-8 border-y border-ink py-6">
+            <Eyebrow>Index score</Eyebrow>
+            <div className="tnum mt-1 font-serif text-[72px] leading-[0.85]">{b.composite.toFixed(1)}</div>
+            <div className="mt-3 flex items-center gap-2 text-[12px] text-muted">
+              <span className={cx('px-1.5 py-0.5 text-[11px] font-medium', scoreBand(b.composite).tile)}>{scoreBand(b.composite).label}</span>
+              Top {Math.max(1, 100 - b.percentile)}% of the catalogue
             </div>
           </div>
 
@@ -1939,8 +1635,6 @@ function BrandDrawer({
             </section>
           )}
 
-          <BuyAtSection brand={b} />
-
           <section className="mt-10">
             <h3 className="mb-3 font-serif text-[26px]">Fact sheet</h3>
             <dl className="divide-y divide-rule border-y border-rule text-[13px]">
@@ -1951,15 +1645,6 @@ function BrandDrawer({
                 </div>
               ))}
             </dl>
-            {!!b.tags?.length && (
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {b.tags.map((t) => (
-                  <span key={t} className="border border-rule px-2 py-0.5 text-[11px] text-muted">
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
           </section>
 
           <section className="mt-10 border border-ink p-5">
@@ -2275,7 +1960,6 @@ function MethodologyView({ weights }: { weights: Weights }) {
 /* ================================================================== */
 
 type Tab = 'index' | 'list' | 'method';
-type View = 'list' | 'grid';
 const BRAND_HASH = '#brand/';
 
 function idFromHash(): string | null {
@@ -2290,15 +1974,6 @@ export default function App() {
   const byId = useMemo(() => new Map(ranked.map((b) => [b.id, b])), [ranked]);
 
   const [tab, setTab] = useState<Tab>('index');
-  const [view, setViewState] = useState<View>(() => readPref<View>(VIEW_KEY, ['list', 'grid'], 'list'));
-  const setView = useCallback((v: View) => {
-    setViewState(v);
-    try {
-      localStorage.setItem(VIEW_KEY, v);
-    } catch {
-      /* ignore */
-    }
-  }, []);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const deferred = useDeferredValue(filters);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -2327,7 +2002,6 @@ export default function App() {
       }
       if (deferred.country && b.origin.countryCode !== deferred.country) continue;
       if (b.composite < deferred.minScore) continue;
-      if (deferred.savedOnly && !saved[b.id]) continue;
 
       const catOk = !cats.length || cats.includes(b.category) || !!b.subcategories?.some((s) => cats.includes(s));
       const tierOk = !tiers.length || tiers.includes(b.tier);
@@ -2367,7 +2041,7 @@ export default function App() {
       results: hits.map((h) => h.b),
       facets: { categoryCounts, tierCounts, stockistCounts, countries: [...countryMap.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) },
     };
-  }, [ranked, deferred, saved]);
+  }, [ranked, deferred]);
 
   /* ----- deep links: #brand/<id> ----- */
   const [selectedId, setSelectedId] = useState<string | null>(idFromHash);
@@ -2433,7 +2107,7 @@ export default function App() {
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-ink focus:px-3 focus:py-2 focus:text-paper">
         Skip to content
       </a>
-      <Masthead ranked={ranked} data={data} tab={tab} setTab={changeTab} savedCount={savedCount} />
+      <Masthead data={data} tab={tab} setTab={changeTab} savedCount={savedCount} />
 
       <main id="main" className="mx-auto max-w-[1360px] px-4 pb-24 sm:px-8">
         {tab === 'index' && (
@@ -2444,17 +2118,13 @@ export default function App() {
               facets={facets}
               resultCount={results.length}
               total={ranked.length}
-              view={view}
-              setView={setView}
               searchRef={searchRef}
             />
             <div className={cx('transition-opacity duration-150', stale && 'opacity-60')}>
               {results.length === 0 ? (
                 <EmptyState onReset={resetFilters} />
-              ) : view === 'list' ? (
-                <Leaderboard items={results} saved={saved} sortKey={deferred.sort} onOpen={openBrand} onToggle={toggle} />
               ) : (
-                <GridView items={results} saved={saved} sortKey={deferred.sort} onOpen={openBrand} onToggle={toggle} />
+                <Leaderboard items={results} saved={saved} sortKey={deferred.sort} onOpen={openBrand} onToggle={toggle} />
               )}
             </div>
           </>
