@@ -1411,19 +1411,49 @@ function LeaderHeader() {
   );
 }
 
+/** Rows revealed at a time: the table starts collapsed and grows on request. */
+const PAGE_SIZE = 25;
+
 function Leaderboard({ items, saved, sortKey, onOpen, onToggle }: { items: RankedBrand[]; saved: SavedMap; sortKey: SortKey; onOpen: (id: string) => void; onToggle: (id: string) => void }) {
-  const { ref, range } = useWindowVirtual(items.length, ROW_HEIGHT);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  // a new search, filter or sort starts collapsed again
+  useEffect(() => setLimit(PAGE_SIZE), [items]);
+  const shown = Math.min(limit, items.length);
+  const remaining = items.length - shown;
+  const { ref, range } = useWindowVirtual(shown, ROW_HEIGHT);
   const [start, end] = range;
   return (
     <>
       <LeaderHeader />
-      <div ref={ref} role="list" aria-label="Brand leaderboard" className="relative border-t border-ink md:border-t-0" style={{ height: items.length * ROW_HEIGHT }}>
-        {items.slice(start, end).map((b, i) => (
+      <div ref={ref} role="list" aria-label="Brand leaderboard" className="relative border-t border-ink md:border-t-0" style={{ height: shown * ROW_HEIGHT }}>
+        {items.slice(start, Math.min(end, shown)).map((b, i) => (
           <div key={b.id} role="listitem" className="absolute inset-x-0" style={{ top: (start + i) * ROW_HEIGHT, height: ROW_HEIGHT }}>
             <LeaderRow brand={b} saved={!!saved[b.id]} sortKey={sortKey} onOpen={onOpen} onToggle={onToggle} />
           </div>
         ))}
       </div>
+      {remaining > 0 && (
+        <div className="flex flex-col items-center gap-2 pt-8">
+          <button
+            type="button"
+            onClick={() => setLimit((l) => l + PAGE_SIZE)}
+            className="inline-flex h-10 items-center gap-2 border border-ink px-5 text-[13px] font-medium transition-colors hover:bg-ink hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+          >
+            <ChevronDown size={15} aria-hidden /> Show {Math.min(PAGE_SIZE, remaining)} more
+          </button>
+          <p className="tnum text-[12px] text-muted">
+            Showing {nf.format(shown)} of {nf.format(items.length)}
+            {remaining > PAGE_SIZE && (
+              <>
+                {' · '}
+                <button type="button" onClick={() => setLimit(items.length)} className="text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink hover:decoration-ink">
+                  show all
+                </button>
+              </>
+            )}
+          </p>
+        </div>
+      )}
     </>
   );
 }
