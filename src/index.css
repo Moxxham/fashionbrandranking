@@ -13,6 +13,17 @@
   --color-rule-strong: #b3ada1;
   --color-oxblood: #7a2121;
 
+  /* Score scale: navy <-> oxblood diverging around the median band (score-4,
+     neutral). Arms are lightness-symmetric (OKLCH L .84 / .51 / .37). Text on
+     1-2 and 6-7 is white (>= 5.9:1); on 3-5 it is ink (>= 11:1). */
+  --color-score-1: #722426;
+  --color-score-2: #a74541;
+  --color-score-3: #e7c0bc;
+  --color-score-4: #dcd9d3;
+  --color-score-5: #b5cde7;
+  --color-score-6: #3963a1;
+  --color-score-7: #173c70;
+
   --animate-drawer-in: drawer-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-fade-in: fade-in 180ms ease-out;
 

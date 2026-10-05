@@ -26,17 +26,31 @@ import {
   ArrowUpRight,
   Bookmark,
   BookmarkCheck,
+  Briefcase,
   Check,
   ChevronDown,
   Copy,
   Database,
+  Footprints,
+  GraduationCap,
+  Hammer,
   Info,
   LayoutGrid,
   LayoutList,
+  Layers,
+  MountainSnow,
+  PenTool,
   RotateCcw,
+  Scissors,
   Search,
+  Shapes,
+  Shirt,
   SlidersHorizontal,
+  Snowflake,
+  Spool,
+  SprayCan,
   Trash2,
+  TreePine,
   X,
 } from 'lucide-react';
 
@@ -151,6 +165,29 @@ const MIN_CONFIDENCE = 0.5;
  *   d = BASE − QUALITY·(composite − PRIOR) − VALUE·(value − PRIOR), clamped, nearest STEP
  */
 const BUY_AT = { base: 60, quality: 0.9, value: 0.4, min: 10, max: 70, step: 5 } as const;
+
+/**
+ * Score bands for conditional formatting: a diverging navy <-> oxblood scale
+ * centred on the band holding the catalogue median (65–70). Colours live in
+ * index.css (--color-score-1…7); every band also carries a word, so colour
+ * is never the only cue.
+ */
+interface ScoreBand {
+  min: number;
+  label: string;
+  /** Tailwind classes for a filled tile in this band. */
+  tile: string;
+}
+const SCORE_BANDS: ScoreBand[] = [
+  { min: 80, label: 'Exceptional', tile: 'bg-score-7 text-white' },
+  { min: 75, label: 'Excellent', tile: 'bg-score-6 text-white' },
+  { min: 70, label: 'Strong', tile: 'bg-score-5 text-ink' },
+  { min: 65, label: 'Solid', tile: 'bg-score-4 text-ink' },
+  { min: 60, label: 'Fair', tile: 'bg-score-3 text-ink' },
+  { min: 55, label: 'Weak', tile: 'bg-score-2 text-white' },
+  { min: 0, label: 'Poor', tile: 'bg-score-1 text-white' },
+];
+const scoreBand = (v: number) => SCORE_BANDS.find((b) => v >= b.min) ?? SCORE_BANDS[SCORE_BANDS.length - 1];
 
 const CATEGORY_IDS = [
   'tailoring',
@@ -822,6 +859,114 @@ function RankBadge({ rank, large = false }: { rank: number; large?: boolean }) {
   );
 }
 
+/** Composite score as a filled tile coloured by band (see SCORE_BANDS). */
+function ScoreTile({ value, size = 'row' }: { value: number; size?: 'row' | 'card' }) {
+  const band = scoreBand(value);
+  return (
+    <span
+      title={`${band.label} · ${value.toFixed(1)}`}
+      className={cx(
+        'tnum inline-flex shrink-0 items-center justify-center font-serif leading-none',
+        size === 'row' ? 'h-[38px] w-[60px] text-[22px]' : 'h-[56px] w-[88px] text-[34px]',
+        band.tile,
+      )}
+    >
+      {value.toFixed(1)}
+    </span>
+  );
+}
+
+/** Compact key for the score colours, highest band last so it reads like the scale. */
+function ScoreKey() {
+  return (
+    <div className="flex items-center gap-2" aria-label="Score colour key">
+      <span className="text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase">Score</span>
+      <ol className="flex">
+        {[...SCORE_BANDS].reverse().map((b, i, arr) => (
+          <li
+            key={b.min}
+            title={`${b.label}: ${b.min === 0 ? `under ${arr[i + 1].min}` : i === arr.length - 1 ? `${b.min}+` : `${b.min}–${arr[i + 1].min}`}`}
+            className={cx('tnum flex h-[18px] w-7 items-center justify-center text-[9.5px]', b.tile)}
+          >
+            {b.min === 0 ? `<${arr[i + 1].min}` : b.min}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+const MONOGRAM_STOP = new Set(['the', 'of', 'and', 'de', 'des', 'du', 'la', 'le', 'les', 'for', 'all', 'by', 'di', 'da', 'del', 'et', 'und']);
+
+/** Up to three characters: initials of the significant words, whole numbers kept ("686", "7M"), acronyms kept ("APC"). */
+function monogramOf(name: string): string {
+  const clean = name.replace(/\s*\([^)]*\)\s*$/, '').replace(/[’'`]/g, '');
+  const tokens = clean.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const words = tokens.filter((t) => !MONOGRAM_STOP.has(t.toLowerCase()));
+  const use = words.length ? words : tokens;
+  if (use.length > 1 && use.every((w) => w.length === 1)) return use.join('').slice(0, 3).toUpperCase();
+  let out = '';
+  for (const w of use) {
+    if (out.length >= 2) break;
+    out += /^\p{N}/u.test(w) ? w.match(/^\p{N}+/u)![0] : w[0];
+  }
+  return out.slice(0, 3).toUpperCase();
+}
+
+/**
+ * Brand mark: a generated monogram in a stitched woven-label plate. Real logos
+ * are trademarks, would need a network fetch per brand and would clash in
+ * style; a monogram gives each row its own shape without any of that.
+ */
+const Monogram = memo(function Monogram({ name, size = 'row' }: { name: string; size?: 'row' | 'card' | 'large' }) {
+  const m = monogramOf(name);
+  const dims = { row: 'h-10 w-10', card: 'h-12 w-12', large: 'h-16 w-16' }[size];
+  const font = {
+    row: ['text-[19px]', 'text-[16px]', 'text-[12px]'],
+    card: ['text-[23px]', 'text-[19px]', 'text-[15px]'],
+    large: ['text-[30px]', 'text-[25px]', 'text-[20px]'],
+  }[size][Math.min(m.length, 3) - 1];
+  return (
+    <span
+      aria-hidden
+      className={cx(
+        'inline-flex shrink-0 items-center justify-center border border-rule-strong bg-panel font-serif leading-none tracking-[0.02em] text-ink-2 outline-1 -outline-offset-4 outline-rule outline-dashed',
+        dims,
+        font,
+      )}
+    >
+      {m}
+    </span>
+  );
+});
+
+const CATEGORY_ICON: Record<CategoryId, typeof Scissors> = {
+  tailoring: Scissors,
+  shirting: Shirt,
+  trad: GraduationCap,
+  heritage: Hammer,
+  denim: Spool,
+  country: TreePine,
+  technical: MountainSnow,
+  designer: PenTool,
+  contemporary: Shapes,
+  streetwear: SprayCan,
+  essentials: Layers,
+  knitwear: Snowflake,
+  footwear: Footprints,
+  accessories: Briefcase,
+};
+
+function CategoryLabel({ category, className }: { category: CategoryId; className?: string }) {
+  const Icon = CATEGORY_ICON[category];
+  return (
+    <span className={cx('inline-flex min-w-0 items-center gap-1.5', className)}>
+      <Icon size={13} strokeWidth={1.7} className="shrink-0 text-muted" aria-hidden />
+      <span className="truncate">{CATEGORY_BY_ID[category].label}</span>
+    </span>
+  );
+}
+
 function TierMark({ tier }: { tier: TierId }) {
   const t = TIER_BY_ID[tier];
   return (
@@ -1259,6 +1404,10 @@ function ControlPanel({
             </button>
           )}
         </span>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="hidden md:block">
+          <ScoreKey />
+        </div>
         <div role="group" aria-label="Show only" className="flex flex-wrap gap-1.5">
           {RETAILERS.map((r) => (
             <Chip key={r.id} active={filters.stockist === r.id} count={facets.stockistCounts[r.id]} onClick={() => set('stockist', filters.stockist === r.id ? '' : r.id)}>
@@ -1268,6 +1417,7 @@ function ControlPanel({
           <Chip active={filters.savedOnly} onClick={() => set('savedOnly', !filters.savedOnly)}>
             <Bookmark size={12} /> Saved only
           </Chip>
+        </div>
         </div>
       </div>
     </>
@@ -1317,14 +1467,15 @@ interface ItemProps {
 
 /**
  * One column template shared by the header and every row, so headers can't
- * drift from their cells. Columns appear as width allows:
- *   base  rank · brand · score (buy-at beneath) · save
- *   md    + discipline/tier · buy at
+ * drift from their cells. Score sits straight after the brand, with Buy at
+ * beside it: the two numbers a reader acts on. Columns appear as width allows:
+ *   base  rank · brand · score · save        (buy-at beneath the score)
+ *   md    + buy at · discipline/tier
  *   lg    + profile
  *   xl    + signature
  */
 const LEADER_COLS =
-  'grid-cols-[40px_minmax(0,1fr)_auto_36px] md:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_96px_76px_40px] lg:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_96px_76px_40px] xl:grid-cols-[56px_minmax(0,2.2fr)_minmax(0,1.2fr)_88px_minmax(0,1.5fr)_96px_76px_40px]';
+  'grid-cols-[32px_minmax(0,1fr)_auto_36px] md:grid-cols-[52px_minmax(0,2fr)_72px_96px_minmax(0,1.2fr)_40px] lg:grid-cols-[52px_minmax(0,2fr)_72px_96px_minmax(0,1.2fr)_88px_40px] xl:grid-cols-[52px_minmax(0,2fr)_72px_96px_minmax(0,1.2fr)_88px_minmax(0,1.4fr)_40px]';
 
 const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, onToggle }: ItemProps) {
   const dim = (DIMENSION_IDS as readonly string[]).includes(sortKey) ? (sortKey as DimensionId) : undefined;
@@ -1332,40 +1483,29 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
   return (
     <div className={cx('group relative grid h-full items-center gap-x-3 border-b border-rule px-1 transition-colors hover:bg-panel sm:px-4 md:gap-x-4', LEADER_COLS)}>
       <RankBadge rank={b.rank} />
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="hidden sm:inline-flex">
+          <Monogram name={b.name} />
+        </span>
+        <div className="min-w-0">
           <button
             type="button"
             onClick={open}
-            className="truncate text-left font-serif text-[22px] leading-tight after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ink group-hover:underline group-hover:decoration-1 group-hover:underline-offset-4"
+            className="block max-w-full truncate text-left font-serif text-[22px] leading-tight after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ink group-hover:underline group-hover:decoration-1 group-hover:underline-offset-4"
           >
             {b.name}
           </button>
+          <div className="truncate text-[12px] text-muted">
+            {originLine(b)}
+            {b.founded ? ` · Est. ${b.founded}` : ''}
+            <span className="md:hidden"> · {CATEGORY_BY_ID[b.category].label}</span>
+          </div>
         </div>
-        <div className="truncate text-[12px] text-muted">
-          {originLine(b)}
-          {b.founded ? ` · Est. ${b.founded}` : ''}
-          <span className="md:hidden"> · {CATEGORY_BY_ID[b.category].label}</span>
-        </div>
       </div>
-      <div className="hidden min-w-0 md:block">
-        <div className="mb-1 truncate text-[13px] text-ink-2">{CATEGORY_BY_ID[b.category].label}</div>
-        <TierMark tier={b.tier} />
-      </div>
-      <div className="hidden lg:block">
-        <ProfileHover scores={b.scores} highlight={dim} onOpen={open} />
-      </div>
-      <div className="hidden min-w-0 xl:block">
-        <div className="truncate text-[13.5px] text-ink-2">{b.signatures[0]?.name ?? '—'}</div>
-        {b.signatures.length > 1 && <div className="truncate text-[11.5px] text-muted">+ {b.signatures.slice(1).map((s) => s.name).join(', ')}</div>}
-      </div>
-      <div className="hidden md:block">
-        <BuyAt brand={b} />
-      </div>
-      <div className="text-right">
-        <div className="tnum font-serif text-[26px] leading-none">{b.composite.toFixed(1)}</div>
+      <div className="flex flex-col items-end md:items-start">
+        <ScoreTile value={b.composite} />
         {dim ? (
-          <div className="tnum mt-1 text-[11px] text-oxblood">
+          <div className="tnum mt-1 text-[11px] font-medium text-ink-2">
             {DIM_BY_ID[dim].abbr} {b.scores[dim]}
           </div>
         ) : (
@@ -1377,6 +1517,22 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
             <div className="tnum mt-1 hidden text-[11px] text-muted md:block">top {Math.max(1, 100 - b.percentile)}%</div>
           </>
         )}
+      </div>
+      <div className="hidden md:block">
+        <BuyAt brand={b} />
+      </div>
+      <div className="hidden min-w-0 md:block">
+        <CategoryLabel category={b.category} className="mb-1 max-w-full text-[13px] text-ink-2" />
+        <div>
+          <TierMark tier={b.tier} />
+        </div>
+      </div>
+      <div className="hidden lg:block">
+        <ProfileHover scores={b.scores} highlight={dim} onOpen={open} />
+      </div>
+      <div className="hidden min-w-0 xl:block">
+        <div className="truncate text-[13.5px] text-ink-2">{b.signatures[0]?.name ?? '—'}</div>
+        {b.signatures.length > 1 && <div className="truncate text-[11.5px] text-muted">+ {b.signatures.slice(1).map((s) => s.name).join(', ')}</div>}
       </div>
       <SaveButton saved={saved} onToggle={() => onToggle(b.id)} name={b.name} className="justify-self-end" />
     </div>
@@ -1395,15 +1551,15 @@ function LeaderHeader() {
     >
       <span>Rank</span>
       <span>Brand</span>
+      <span title="Composite index score, coloured by band. Navy is above the catalogue median, oxblood below; see the key above the table.">Score</span>
+      <span className="inline-flex items-center gap-1" title="The discount off RRP at which this brand is an instant buy. Derived from its index score and value integrity; see Methodology.">
+        Buy at <Info size={11} strokeWidth={2} aria-hidden />
+      </span>
       <span>Discipline · Tier</span>
       <span className="hidden items-center gap-1 lg:inline-flex" title="Eight dimension scores, in methodology order. Hover a profile for the values.">
         Profile <Info size={11} strokeWidth={2} aria-hidden />
       </span>
       <span className="hidden xl:block">Signature</span>
-      <span className="inline-flex items-center gap-1" title="The discount off RRP at which this brand is an instant buy. Derived from its index score and value integrity; see Methodology.">
-        Buy at <Info size={11} strokeWidth={2} aria-hidden />
-      </span>
-      <span className="text-right">Score</span>
       <span />
     </div>
   );
@@ -1435,9 +1591,9 @@ const BrandCard = memo(function BrandCard({ brand: b, saved, sortKey, onOpen, on
   return (
     <article className="group relative flex flex-col border border-rule bg-panel p-5 transition-colors hover:border-ink">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <Monogram name={b.name} size="card" />
           <RankBadge rank={b.rank} />
-         
         </div>
         <SaveButton saved={saved} onToggle={() => onToggle(b.id)} name={b.name} className="-mt-1 -mr-1.5" />
       </div>
@@ -1451,14 +1607,14 @@ const BrandCard = memo(function BrandCard({ brand: b, saved, sortKey, onOpen, on
         {b.founded ? ` · Est. ${b.founded}` : ''}
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-[12.5px] text-ink-2">{CATEGORY_BY_ID[b.category].label}</span>
+        <CategoryLabel category={b.category} className="text-[12.5px] text-ink-2" />
         <TierMark tier={b.tier} />
       </div>
       <div className="mt-5 flex items-end justify-between gap-4 border-t border-rule pt-4">
         <ScoreProfile scores={b.scores} highlight={dim} labelled />
-        <div className="text-right">
-          <div className="tnum font-serif text-[40px] leading-none">{b.composite.toFixed(1)}</div>
-          <div className="tnum mt-1 text-[11px] text-muted">{dim ? `${DIM_BY_ID[dim].short} ${b.scores[dim]}` : `#${b.categoryRank} in discipline`}</div>
+        <div className="flex flex-col items-end">
+          <ScoreTile value={b.composite} size="card" />
+          <div className="tnum mt-1.5 text-[11px] text-muted">{dim ? `${DIM_BY_ID[dim].short} ${b.scores[dim]}` : `#${b.categoryRank} in discipline`}</div>
         </div>
       </div>
       <div className="mt-4 flex items-end justify-between gap-4 border-t border-rule pt-3">
@@ -1696,7 +1852,8 @@ function BrandDrawer({
         </div>
 
         <div className="px-6 pt-8 pb-16 sm:px-10">
-          <div className="flex items-start gap-4">
+          <div className="flex items-center gap-4">
+            <Monogram name={b.name} size="large" />
             <RankBadge rank={b.rank} large />
             <div className="min-w-0 text-[12px] leading-relaxed text-muted">
               <div>
@@ -1719,7 +1876,10 @@ function BrandDrawer({
             <div>
               <Eyebrow>Index score</Eyebrow>
               <div className="tnum mt-1 font-serif text-[72px] leading-[0.85]">{b.composite.toFixed(1)}</div>
-              <div className="mt-2 text-[12px] text-muted">Top {Math.max(1, 100 - b.percentile)}% of the catalogue</div>
+              <div className="mt-3 flex items-center gap-2 text-[12px] text-muted">
+                <span className={cx('px-1.5 py-0.5 text-[11px] font-medium', scoreBand(b.composite).tile)}>{scoreBand(b.composite).label}</span>
+                Top {Math.max(1, 100 - b.percentile)}% of the catalogue
+              </div>
             </div>
             <div className="flex justify-end">
               <ScoreProfile scores={b.scores} labelled />
@@ -2038,6 +2198,15 @@ function MethodologyView({ weights }: { weights: Weights }) {
         </li>
         <li>
           <strong className="font-semibold text-ink">Tier-relative value.</strong> Value Integrity is scored against peers in the same market tier, so it measures how much quality a brand delivers <em>for what it is</em>.
+        </li>
+        <li>
+          <strong className="font-semibold text-ink">Reading the colours.</strong> Scores are shaded on a diverging scale centred on the band that holds the catalogue median: navy above it, oxblood below, neutral in between. Each band also has a name, so the colour is never the only cue:{' '}
+          {SCORE_BANDS.map((b, i) => (
+            <span key={b.min} className="whitespace-nowrap">
+              <span className={cx('tnum mx-0.5 inline-block px-1 text-[11px]', b.tile)}>{b.min === 0 ? `<${SCORE_BANDS[i - 1].min}` : `${b.min}+`}</span> {b.label}
+              {i < SCORE_BANDS.length - 1 ? ', ' : '.'}
+            </span>
+          ))}
         </li>
       </ul>
 

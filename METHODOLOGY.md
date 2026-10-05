@@ -89,6 +89,8 @@ Index = 60 + c·(B − 60)         confidence shrinkage, c ∈ [0.5, 1]
 - Each brand also gets a **discipline rank** (within its primary discipline) and a **catalogue percentile**.
 - Any dimension can be used as a sort key in the UI. The global rank badge always reflects the composite.
 
+**Colour bands.** In the UI the composite is shown as a tile shaded on a diverging navy ↔ oxblood scale centred on the band that holds the catalogue median: 80+ Exceptional, 75+ Excellent, 70+ Strong, 65+ Solid (neutral), 60+ Fair, 55+ Weak, under 55 Poor. Every band carries its name as well as its colour, and text on every step clears WCAG AA contrast. Colours live in `src/index.css` (`--color-score-1…7`); the bands live in `SCORE_BANDS` in `src/App.tsx`.
+
 ### 2.4 Buy-at threshold
 
 Each brand gets a **buy-at** figure: the discount off RRP at which it becomes an instant buy. It is a discount rather than a price because one brand's tee and jacket share no price, but each carries an RRP. Off-price stores such as TK Maxx print the RRP on the ticket next to their own price.
