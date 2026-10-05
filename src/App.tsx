@@ -148,7 +148,7 @@ const DIMENSIONS: DimensionDef[] = [
 const DEFAULT_WEIGHTS = Object.fromEntries(DIMENSIONS.map((d) => [d.id, d.weight])) as Weights;
 const DIM_BY_ID = Object.fromEntries(DIMENSIONS.map((d) => [d.id, d])) as Record<DimensionId, DimensionDef>;
 
-/** Composite = PRIOR + c · (BLEND·A + (1−BLEND)·G − PRIOR) — see Methodology tab. */
+/** Composite = PRIOR + c · (BLEND·A + (1−BLEND)·G − PRIOR) — see METHODOLOGY.md. */
 const BLEND = 0.75; // share of the weighted arithmetic mean; remainder is the weighted geometric mean
 const PRIOR = 60; // "competent, unremarkable" baseline that low-evidence scores shrink towards
 const MIN_CONFIDENCE = 0.5;
@@ -247,7 +247,6 @@ const TIERS: TierDef[] = [
   { id: 'mainstream', label: 'Mainstream', symbol: '$', band: 'under $60', description: 'High-street and mass-market labels.' },
 ];
 const TIER_BY_ID = Object.fromEntries(TIERS.map((t) => [t.id, t])) as Record<TierId, TierDef>;
-const TIER_BAND_NOTE = 'Bands are indexed to the brand’s core shirt-equivalent garment at full retail (USD).';
 
 /**
  * Where to buy. A brand's `stockists` are editorial flags (scripts/stockists.mjs)
@@ -828,7 +827,7 @@ function originLine(b: Brand) {
 /** Typographic rank numeral: the top ten in ink, the rest recede so the name and score lead. */
 function RankBadge({ rank }: { rank: number }) {
   return (
-    <span aria-label={`Rank ${rank}`} className={cx('tnum shrink-0 font-serif text-[20px] leading-none md:text-[22px]', rank <= 10 ? 'text-ink' : 'text-muted')}>
+    <span aria-label={`Rank ${rank}`} className={cx('tnum shrink-0 text-[14px] font-medium leading-none', rank <= 10 ? 'text-ink' : 'text-muted')}>
       {String(rank).padStart(2, '0')}
     </span>
   );
@@ -840,7 +839,7 @@ function ScoreTile({ value }: { value: number }) {
   return (
     <span
       title={`${band.label} · ${value.toFixed(1)}`}
-      className={cx('tnum inline-flex h-[38px] w-[60px] shrink-0 items-center justify-center font-serif text-[22px] leading-none', band.tile)}
+      className={cx('tnum inline-flex h-[34px] w-[56px] shrink-0 items-center justify-center text-[15px] font-semibold leading-none', band.tile)}
     >
       {value.toFixed(1)}
     </span>
@@ -873,14 +872,14 @@ const Monogram = memo(function Monogram({ name, size = 'row' }: { name: string; 
   const m = monogramOf(name);
   const dims = { row: 'h-10 w-10', large: 'h-16 w-16' }[size];
   const font = {
-    row: ['text-[19px]', 'text-[16px]', 'text-[12px]'],
-    large: ['text-[30px]', 'text-[25px]', 'text-[20px]'],
+    row: ['text-[15px]', 'text-[13px]', 'text-[11px]'],
+    large: ['text-[24px]', 'text-[20px]', 'text-[16px]'],
   }[size][Math.min(m.length, 3) - 1];
   return (
     <span
       aria-hidden
       className={cx(
-        'inline-flex shrink-0 items-center justify-center bg-rule/55 font-serif leading-none tracking-[0.02em] text-ink-2',
+        'inline-flex shrink-0 items-center justify-center bg-rule/55 font-semibold leading-none tracking-[0.04em] text-ink-2',
         dims,
         font,
       )}
@@ -1070,10 +1069,9 @@ function Masthead({ data, tab, setTab, savedCount }: { data: DataState; tab: Tab
   const tabs: { id: Tab; label: string; badge?: number }[] = [
     { id: 'index', label: 'The Index' },
     { id: 'list', label: 'My List', badge: savedCount },
-    { id: 'method', label: 'Methodology' },
   ];
   return (
-    <header className="border-b border-ink">
+    <header>
       <div className="mx-auto flex h-14 max-w-[1360px] items-stretch justify-between gap-4 px-4 sm:px-8">
         <h1 className="flex items-center">
           <button type="button" onClick={() => setTab('index')} className="flex items-center gap-2.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink">
@@ -1143,7 +1141,7 @@ function ControlPanel({
   return (
     <>
       {/* sticky search, sort and filter toggle */}
-      <div className="sticky top-0 z-30 border-b border-rule bg-paper/95 backdrop-blur">
+      <div className="sticky top-0 z-30 bg-paper/95 backdrop-blur">
         <div className="flex items-center gap-2 py-3 sm:gap-3">
           <label className="relative flex min-w-0 flex-1 items-center">
             <span className="sr-only">Search brands, signature pieces, cities, tags</span>
@@ -1163,7 +1161,7 @@ function ControlPanel({
                 <X size={15} />
               </button>
             ) : (
-              <kbd className="pointer-events-none absolute right-3 hidden border border-rule px-1.5 text-[11px] text-muted sm:inline">/</kbd>
+              <kbd className="pointer-events-none absolute right-3 hidden border font-sans border-rule px-1.5 text-[11px] text-muted sm:inline">/</kbd>
             )}
           </label>
           <label className="hidden min-w-0 items-center sm:flex">
@@ -1339,10 +1337,10 @@ interface ItemProps {
  *   base  rank · brand · score · save
  *   md    + discipline/tier
  *   lg    + profile
- *   xl    + signature
+ * Signature pieces live in the dossier, so the brand column takes the room.
  */
 const LEADER_COLS =
-  'grid-cols-[32px_minmax(0,1fr)_auto_36px] md:grid-cols-[52px_minmax(0,2fr)_72px_minmax(0,1.2fr)_40px] lg:grid-cols-[52px_minmax(0,2fr)_72px_minmax(0,1.2fr)_88px_40px] xl:grid-cols-[52px_minmax(0,2fr)_72px_minmax(0,1.2fr)_88px_minmax(0,1.4fr)_40px]';
+  'grid-cols-[32px_minmax(0,1fr)_auto_36px] md:grid-cols-[52px_minmax(0,2fr)_72px_minmax(0,1.2fr)_40px] lg:grid-cols-[56px_minmax(0,1.6fr)_80px_minmax(0,1.3fr)_minmax(96px,0.9fr)_44px]';
 
 const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, onToggle }: ItemProps) {
   const dim = (DIMENSION_IDS as readonly string[]).includes(sortKey) ? (sortKey as DimensionId) : undefined;
@@ -1358,7 +1356,7 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
           <button
             type="button"
             onClick={open}
-            className="block max-w-full truncate text-left font-serif text-[22px] leading-tight after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ink group-hover:underline group-hover:decoration-1 group-hover:underline-offset-4"
+            className="block max-w-full truncate text-left text-[15.5px] font-semibold leading-snug after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ink group-hover:underline group-hover:decoration-1 group-hover:underline-offset-4"
           >
             {b.name}
           </button>
@@ -1386,21 +1384,18 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
       <div className="hidden lg:block">
         <ProfileHover scores={b.scores} highlight={dim} onOpen={open} />
       </div>
-      <div className="hidden min-w-0 xl:block">
-        <div className="truncate text-[13.5px] text-ink-2">{b.signatures[0]?.name ?? '—'}</div>
-      </div>
       <SaveButton saved={saved} onToggle={() => onToggle(b.id)} name={b.name} className="justify-self-end" />
     </div>
   );
 });
 
-/** Column header; sticks directly beneath the 65px toolbar (md+ only, where the toolbar is one row). */
+/** Column header; sticks directly beneath the 64px toolbar (md+ only). */
 function LeaderHeader() {
   return (
     <div
       aria-hidden
       className={cx(
-        'sticky top-[65px] z-20 hidden items-center gap-x-4 border-b border-ink bg-paper/95 px-4 py-2 text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase backdrop-blur md:grid',
+        'sticky top-16 z-20 hidden items-center gap-x-4 border-b border-ink bg-paper/95 px-4 py-2 text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase backdrop-blur md:grid',
         LEADER_COLS,
       )}
     >
@@ -1411,7 +1406,6 @@ function LeaderHeader() {
       <span className="hidden lg:block" title="Eight dimension scores, in methodology order. Hover a profile for the values.">
         Profile
       </span>
-      <span className="hidden xl:block">Signature</span>
       <span />
     </div>
   );
@@ -1437,7 +1431,7 @@ function Leaderboard({ items, saved, sortKey, onOpen, onToggle }: { items: Ranke
 function EmptyState({ onReset }: { onReset: () => void }) {
   return (
     <div className="border-t border-ink py-24 text-center">
-      <p className="font-serif text-3xl">Nothing on the rail.</p>
+      <p className="text-xl font-semibold">Nothing on the rail.</p>
       <p className="mt-2 text-[14px] text-muted">No brands match the current search and filters.</p>
       <button type="button" onClick={onReset} className="mt-6 inline-flex items-center gap-2 border border-ink px-4 py-2 text-[13px] hover:bg-ink hover:text-paper">
         <RotateCcw size={14} /> Reset filters
@@ -1467,7 +1461,7 @@ function DimensionBars({ brand, medians, weights }: { brand: RankedBrand; median
                     {delta >= 0 ? '+' : '−'}
                     {Math.abs(delta)} vs median
                   </span>
-                  <span className="font-serif text-[22px] leading-none">{v}</span>
+                  <span className="text-[16px] font-semibold leading-none">{v}</span>
                 </span>
               </div>
               <div className="relative mt-1.5 h-[6px] bg-rule/70">
@@ -1546,7 +1540,7 @@ function BrandDrawer({
       b.priceUSD && ['Indicative price', `$${nf.format(b.priceUSD.from)}–${nf.format(b.priceUSD.to)}${b.priceUSD.reference ? ` · ${b.priceUSD.reference}` : ''}`],
       b.production?.length && ['Production', b.production.join(', ')],
       b.ownership && ['Ownership', `${b.ownership.type.replace('-', ' ')}${b.ownership.parent ? ` · ${b.ownership.parent}` : ''}`],
-      ['Buy at', <span title="The discount off RRP at which this brand is an instant buy (see Methodology).">{b.buyAt}% off RRP or more</span>],
+      ['Buy at', <span title="An instant buy once the ticket shows this discount off RRP. Set by the index score and value integrity.">{b.buyAt}% off RRP or more</span>],
       stockist && [
         'Stockist',
         <a href={stockist.search(searchTerm(b.name))} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline decoration-rule-strong underline-offset-4 hover:decoration-ink">
@@ -1578,7 +1572,7 @@ function BrandDrawer({
               </div>
             </div>
           </div>
-          <h2 id="drawer-title" className="mt-5 font-serif text-[clamp(2.4rem,7vw,3.75rem)] leading-[0.95]">
+          <h2 id="drawer-title" className="mt-5 text-[clamp(1.9rem,5vw,2.6rem)] leading-[1.05] font-semibold tracking-[-0.02em]">
             {b.name}
           </h2>
           <p className="mt-2 text-[13px] text-muted">
@@ -1588,14 +1582,14 @@ function BrandDrawer({
 
           <div className="mt-8 border-y border-ink py-6">
             <Eyebrow>Index score</Eyebrow>
-            <div className="tnum mt-1 font-serif text-[72px] leading-[0.85]">{b.composite.toFixed(1)}</div>
+            <div className="tnum mt-2 text-[52px] leading-none font-semibold tracking-[-0.03em]">{b.composite.toFixed(1)}</div>
             <div className="mt-3 flex items-center gap-2 text-[12px] text-muted">
               <span className={cx('px-1.5 py-0.5 text-[11px] font-medium', scoreBand(b.composite).tile)}>{scoreBand(b.composite).label}</span>
               Top {Math.max(1, 100 - b.percentile)}% of the catalogue
             </div>
           </div>
 
-          {b.editorial.summary && <p className="mt-8 font-serif text-[22px] leading-[1.35] text-ink">{b.editorial.summary}</p>}
+          {b.editorial.summary && <p className="mt-8 text-[16px] leading-relaxed text-ink">{b.editorial.summary}</p>}
           {(b.editorial.strengths.length > 0 || b.editorial.caveats.length > 0) && (
             <div className="mt-6 grid gap-6 sm:grid-cols-2">
               <div>
@@ -1624,19 +1618,19 @@ function BrandDrawer({
           )}
 
           <section className="mt-10">
-            <h3 className="mb-4 font-serif text-[26px]">Score breakdown</h3>
+            <h3 className="mb-4 text-[17px] font-semibold">Score breakdown</h3>
             <DimensionBars brand={b} medians={medians} weights={weights} />
           </section>
 
           {b.signatures.length > 0 && (
             <section className="mt-10">
-              <h3 className="mb-3 font-serif text-[26px]">Signature pieces</h3>
+              <h3 className="mb-3 text-[17px] font-semibold">Signature pieces</h3>
               <ol className="divide-y divide-rule border-y border-rule">
                 {b.signatures.map((s, i) => (
                   <li key={s.name} className="flex gap-4 py-3">
                     <span className="tnum w-5 pt-0.5 text-[12px] text-muted">{String(i + 1).padStart(2, '0')}</span>
                     <div>
-                      <div className="font-serif text-[19px] leading-tight italic">{s.name}</div>
+                      <div className="text-[15px] leading-snug font-medium">{s.name}</div>
                       {s.note && <div className="mt-0.5 text-[12.5px] text-muted">{s.note}</div>}
                     </div>
                   </li>
@@ -1646,7 +1640,7 @@ function BrandDrawer({
           )}
 
           <section className="mt-10">
-            <h3 className="mb-3 font-serif text-[26px]">Fact sheet</h3>
+            <h3 className="mb-3 text-[17px] font-semibold">Fact sheet</h3>
             <dl className="divide-y divide-rule border-y border-rule text-[13px]">
               {facts.map(([k, v]) => (
                 <div key={k} className="grid grid-cols-[9rem_1fr] gap-4 py-2.5">
@@ -1735,7 +1729,7 @@ function MyListView({
   if (!entries.length) {
     return (
       <div className="py-24 text-center">
-        <p className="font-serif text-4xl">Your list is empty.</p>
+        <p className="text-2xl font-semibold">Your list is empty.</p>
         <p className="mx-auto mt-3 max-w-md text-[14px] text-muted">Use the bookmark on any brand to save it, then sort your saves into a personal tier list. Everything stays in this browser.</p>
         <button type="button" onClick={onBrowse} className="mt-6 border border-ink px-5 py-2.5 text-[13px] hover:bg-ink hover:text-paper">
           Browse the index
@@ -1747,7 +1741,7 @@ function MyListView({
     <div className="py-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="font-serif text-5xl">My tier list</h2>
+          <h2 className="text-3xl font-semibold tracking-[-0.02em]">My tier list</h2>
           <p className="mt-2 text-[13px] text-muted">
             {entries.length - missing} saved brand{entries.length - missing === 1 ? '' : 's'} · stored locally on this device
             {missing > 0 && ` · ${missing} not in the current dataset`}
@@ -1785,7 +1779,7 @@ function MyListView({
         {groups.map((g) => (
           <section key={g.id} className="grid gap-4 border-b border-rule py-5 md:grid-cols-[200px_1fr]">
             <div className="flex items-baseline gap-3 md:block">
-              <div className="font-serif text-5xl leading-none">{g.id === 'U' ? '—' : g.id}</div>
+              <div className="text-4xl leading-none font-semibold">{g.id === 'U' ? '—' : g.id}</div>
               <div>
                 <div className="mt-1 text-[13px] font-medium">{g.label}</div>
                 <div className="text-[11.5px] text-muted">{g.hint}</div>
@@ -1796,7 +1790,7 @@ function MyListView({
                 {g.brands.map((b) => (
                   <li key={b.id} className="flex items-stretch border border-rule bg-panel">
                     <button type="button" onClick={() => onOpen(b.id)} className="flex items-baseline gap-2 px-3 py-2 text-left hover:bg-paper">
-                      <span className="font-serif text-[18px] leading-none">{b.name}</span>
+                      <span className="text-[14px] leading-none font-medium">{b.name}</span>
                       <span className="tnum text-[11px] text-muted">
                         {b.composite.toFixed(1)} · #{b.rank}
                       </span>
@@ -1818,7 +1812,7 @@ function MyListView({
                 ))}
               </ul>
             ) : (
-              <p className="self-center text-[12.5px] text-muted italic">Nothing here yet.</p>
+              <p className="self-center text-[12.5px] text-muted">Nothing here yet.</p>
             )}
           </section>
         ))}
@@ -1827,149 +1821,11 @@ function MyListView({
   );
 }
 
-/* ---------- methodology ---------- */
-
-function MethodologyView({ weights }: { weights: Weights }) {
-  return (
-    <article className="mx-auto max-w-3xl py-10">
-      <Eyebrow>Methodology v{METHODOLOGY_VERSION}</Eyebrow>
-      <h2 className="mt-2 font-serif text-5xl leading-none">How the index is built</h2>
-      <p className="mt-6 font-serif text-[22px] leading-snug text-ink-2">
-        The index asks one question: if you spent your money here, how good is what you would own — and for how long? Every brand is assessed on eight dimensions, each scored 0–100 against a written rubric, then combined into a single composite.
-      </p>
-
-      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">1 · The eight dimensions</h3>
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[560px] text-left text-[13px]">
-          <thead>
-            <tr className="border-b border-ink text-[10.5px] tracking-[0.16em] text-muted uppercase">
-              <th className="py-2 pr-4 font-semibold">Dimension</th>
-              <th className="py-2 pr-4 text-right font-semibold">Weight</th>
-              <th className="py-2 font-semibold">What is assessed · why this weight</th>
-            </tr>
-          </thead>
-          <tbody>
-            {DIMENSIONS.map((d) => (
-              <tr key={d.id} className="border-b border-rule align-top">
-                <td className="py-3 pr-4">
-                  <div className="font-medium">{d.label}</div>
-                  <div className="text-[11px] text-muted">{d.abbr}</div>
-                </td>
-                <td className="tnum py-3 pr-4 text-right font-serif text-2xl">{Math.round(weights[d.id] * 100)}%</td>
-                <td className="py-3 text-ink-2">
-                  <div>{d.question}</div>
-                  <div className="mt-1 text-muted">{d.rationale}</div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="mt-4 text-[13.5px] leading-relaxed text-ink-2">
-        The distribution is deliberate: <strong className="font-semibold">40%</strong> on the physical object (materials, construction), <strong className="font-semibold">30%</strong> on how it lives with you (design, longevity),{' '}
-        <strong className="font-semibold">20%</strong> on market context (value, reputation) and <strong className="font-semibold">10%</strong> on institutional behaviour (consistency, transparency).
-      </p>
-
-      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">2 · The composite</h3>
-      <div className="mt-4 overflow-x-auto border border-rule bg-panel p-5 font-mono text-[12.5px] leading-7">
-        <div>A = Σ wᵢ·sᵢ{'                 '}weighted arithmetic mean</div>
-        <div>G = Π sᵢ^wᵢ{'                 '}weighted geometric mean</div>
-        <div>
-          B = {BLEND}·A + {1 - BLEND}·G{'        '}balanced score
-        </div>
-        <div>
-          Index = {PRIOR} + c·(B − {PRIOR}){'      '}confidence shrinkage, c ∈ [{MIN_CONFIDENCE}, 1]
-        </div>
-      </div>
-      <ul className="mt-4 space-y-3 text-[13.5px] leading-relaxed text-ink-2">
-        <li>
-          <strong className="font-semibold text-ink">Balance over spikes.</strong> The geometric component penalises weak links: a brand with world-class design and poor construction cannot buy its way to the top with one spectacular dimension.
-        </li>
-        <li>
-          <strong className="font-semibold text-ink">Confidence shrinkage.</strong> Each record carries an evidence confidence <em>c</em>. Thinly-evidenced scores are pulled toward a prior of {PRIOR} (“competent, unremarkable”), so a newcomer needs real evidence to outrank an established maker.
-        </li>
-        <li>
-          <strong className="font-semibold text-ink">Dynamic ranks.</strong> Ranks are recomputed in the browser from raw sub-scores every time data loads, using competition ranking (1-2-2-4). Ties break on Construction, then Material, then name. Each brand also receives a discipline rank and a catalogue percentile.
-        </li>
-        <li>
-          <strong className="font-semibold text-ink">Tier-relative value.</strong> Value Integrity is scored against peers in the same market tier, so it measures how much quality a brand delivers <em>for what it is</em>.
-        </li>
-        <li>
-          <strong className="font-semibold text-ink">Reading the colours.</strong> Scores are shaded on a diverging scale centred on the band that holds the catalogue median: navy above it, oxblood below, neutral in between. Each band also has a name, so the colour is never the only cue:{' '}
-          {SCORE_BANDS.map((b, i) => (
-            <span key={b.min} className="whitespace-nowrap">
-              <span className={cx('tnum mx-0.5 inline-block px-1 text-[11px]', b.tile)}>{b.min === 0 ? `<${SCORE_BANDS[i - 1].min}` : `${b.min}+`}</span> {b.label}
-              {i < SCORE_BANDS.length - 1 ? ', ' : '.'}
-            </span>
-          ))}
-        </li>
-      </ul>
-
-      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">3 · Market tiers</h3>
-      <p className="mt-2 text-[13px] text-muted">{TIER_BAND_NOTE}</p>
-      <dl className="mt-4 divide-y divide-rule border-y border-rule">
-        {TIERS.map((t) => (
-          <div key={t.id} className="grid grid-cols-[7.5rem_6rem_1fr] gap-4 py-3 text-[13px]">
-            <dt className="font-medium">
-              {t.label} <span className="text-muted">{t.symbol}</span>
-            </dt>
-            <dd className="tnum text-ink-2">{t.band}</dd>
-            <dd className="text-ink-2">{t.description}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">4 · Disciplines</h3>
-      <p className="mt-2 text-[13px] text-muted">Each brand has one primary discipline (which determines its discipline rank) and optional secondary disciplines (which make it discoverable under those filters).</p>
-      <dl className="mt-4 grid gap-x-8 sm:grid-cols-2">
-        {CATEGORIES.map((c) => (
-          <div key={c.id} className="border-b border-rule py-3">
-            <dt className="font-serif text-xl">{c.label}</dt>
-            <dd className="mt-1 text-[12.5px] leading-snug text-ink-2">{c.description}</dd>
-            <dd className="mt-1 text-[11.5px] text-muted italic">{c.examples}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">5 · The buy-at threshold</h3>
-      <p className="mt-4 text-[13.5px] leading-relaxed text-ink-2">
-        Every brand carries a <strong className="font-semibold text-ink">buy-at</strong> figure: the discount off RRP at which it becomes an instant buy. It is a discount rather than a price because a brand’s tee and its jacket share no price, but they do share a ticket RRP — which off-price stores such as TK Maxx print next to their own price.
-      </p>
-      <div className="mt-4 overflow-x-auto border border-rule bg-panel p-5 font-mono text-[12.5px] leading-7">
-        <div>
-          buy-at = {BUY_AT.base} − {BUY_AT.quality}·(Index − {PRIOR}) − {BUY_AT.value}·(Value − {PRIOR})
-        </div>
-        <div>
-          rounded to the nearest {BUY_AT.step}%, held within {BUY_AT.min}–{BUY_AT.max}%
-        </div>
-      </div>
-      <ul className="mt-4 space-y-3 text-[13.5px] leading-relaxed text-ink-2">
-        <li>
-          <strong className="font-semibold text-ink">Quality lowers the bar.</strong> Each index point above {PRIOR} takes {BUY_AT.quality} points off the discount needed: a top-decile maker is worth having at a modest saving.
-        </li>
-        <li>
-          <strong className="font-semibold text-ink">Poor value raises it.</strong> Value Integrity counts again here because it measures how fair the RRP is. Brands that are overpriced at full retail need a deeper cut before they are a buy.
-        </li>
-        <li>
-          <strong className="font-semibold text-ink">A threshold, not a forecast.</strong> It says when to stop deliberating, not what a brand will be discounted to. Check fit and condition as you would at any price.
-        </li>
-      </ul>
-
-      <h3 className="mt-12 border-t border-ink pt-4 font-serif text-3xl">6 · Reading the scores honestly</h3>
-      <ul className="mt-4 space-y-3 text-[13.5px] leading-relaxed text-ink-2">
-        <li>Curated scores are editorial assessments synthesised from construction analysis, materials sourcing, ownership history and enthusiast consensus. They are informed opinion, not laboratory measurements or audits.</li>
-        <li>Brands change — ownership, factories and quality drift. Every record carries an updated date; treat older assessments with proportionate caution.</li>
-        <li>Retailer links open a live search on the retailer’s site. An “Often at TK Maxx” flag is an editorial note that the brand turns up there regularly, not a stock check: off-price retailers buy opportunistically and the rails change daily.</li>
-      </ul>
-    </article>
-  );
-}
-
 /* ================================================================== */
 /* §9  APP SHELL                                                       */
 /* ================================================================== */
 
-type Tab = 'index' | 'list' | 'method';
+type Tab = 'index' | 'list';
 const BRAND_HASH = '#brand/';
 
 function idFromHash(): string | null {
@@ -2140,19 +1996,7 @@ export default function App() {
           </>
         )}
         {tab === 'list' && <MyListView byId={byId} saved={saved} onOpen={openBrand} onSetTier={setTier} onRemove={remove} onClear={clear} onBrowse={() => changeTab('index')} />}
-        {tab === 'method' && <MethodologyView weights={data.weights} />}
       </main>
-
-      <footer className="border-t border-ink">
-        <div className="mx-auto flex max-w-[1360px] flex-wrap justify-between gap-4 px-4 py-8 text-[12px] text-muted sm:px-8">
-          <p className="max-w-2xl">
-            Scores are editorial assessments for comparison and discussion — not audits, endorsements or purchase advice. Bookmarks are stored only in this browser.
-          </p>
-          <p className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.18em] text-ink uppercase">
-            <LogoMark size={16} /> Menswear Index
-          </p>
-        </div>
-      </footer>
 
       {selected && (
         <BrandDrawer brand={selected} total={ranked.length} medians={medians} weights={data.weights} savedEntry={saved[selected.id]} onClose={closeBrand} onToggle={toggle} onSetTier={setTier} />
