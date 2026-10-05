@@ -1054,6 +1054,18 @@ function SelectBox({ active = false, className, children, ...props }: React.Sele
 
 /* ---------- masthead ---------- */
 
+/** The mark: three descending bars, a leaderboard in miniature. Same geometry as public/favicon.svg. */
+function LogoMark({ size = 24 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden className="shrink-0">
+      <rect width="64" height="64" className="fill-ink" />
+      <rect x="14" y="16" width="9" height="32" className="fill-paper" />
+      <rect x="27.5" y="25" width="9" height="23" className="fill-paper" />
+      <rect x="41" y="34" width="9" height="14" className="fill-paper" />
+    </svg>
+  );
+}
+
 function Masthead({ data, tab, setTab, savedCount }: { data: DataState; tab: Tab; setTab: (t: Tab) => void; savedCount: number }) {
   const tabs: { id: Tab; label: string; badge?: number }[] = [
     { id: 'index', label: 'The Index' },
@@ -1062,21 +1074,14 @@ function Masthead({ data, tab, setTab, savedCount }: { data: DataState; tab: Tab
   ];
   return (
     <header className="border-b border-ink">
-      <div className="mx-auto max-w-[1360px] px-4 sm:px-8">
-        <div className="pt-10 pb-8 sm:pt-14 sm:pb-10">
-          <h1 className="font-serif text-[clamp(2.75rem,7vw,5.25rem)] leading-[0.92] tracking-[-0.01em]">
-            The Menswear <em className="italic">Index</em>
-          </h1>
-          <p className="mt-3 max-w-xl font-serif text-xl leading-snug text-ink-2 italic sm:text-2xl">
-            Houses, ateliers and labels, ranked for what lasts.
-          </p>
-          {data.status === 'ready' && data.source === 'embedded' && (
-            <p className="mt-3 text-[12px] text-oxblood" title={data.error}>
-              Showing the built-in sample: the full index (brands.json) could not be loaded.
-            </p>
-          )}
-        </div>
-        <nav aria-label="Sections" className="-mb-px flex gap-6">
+      <div className="mx-auto flex h-14 max-w-[1360px] items-stretch justify-between gap-4 px-4 sm:px-8">
+        <h1 className="flex items-center">
+          <button type="button" onClick={() => setTab('index')} className="flex items-center gap-2.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink">
+            <LogoMark />
+            <span className="sr-only text-[12px] font-semibold tracking-[0.18em] uppercase sm:not-sr-only">Menswear Index</span>
+          </button>
+        </h1>
+        <nav aria-label="Sections" className="-mb-px flex gap-5 sm:gap-7">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -1084,7 +1089,7 @@ function Masthead({ data, tab, setTab, savedCount }: { data: DataState; tab: Tab
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? 'page' : undefined}
               className={cx(
-                'inline-flex items-center gap-2 border-b-2 pt-1 pb-3 text-[13px] font-medium tracking-wide transition-colors',
+                'inline-flex items-center gap-2 border-b-2 text-[13px] font-medium transition-colors',
                 tab === t.id ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink',
               )}
             >
@@ -1094,6 +1099,11 @@ function Masthead({ data, tab, setTab, savedCount }: { data: DataState; tab: Tab
           ))}
         </nav>
       </div>
+      {data.status === 'ready' && data.source === 'embedded' && (
+        <p className="mx-auto max-w-[1360px] px-4 pb-2 text-[12px] text-oxblood sm:px-8" title={data.error}>
+          Showing the built-in sample: the full index (brands.json) could not be loaded.
+        </p>
+      )}
     </header>
   );
 }
@@ -2138,7 +2148,9 @@ export default function App() {
           <p className="max-w-2xl">
             Scores are editorial assessments for comparison and discussion — not audits, endorsements or purchase advice. Bookmarks are stored only in this browser.
           </p>
-          <p className="font-serif text-[15px] text-ink italic">The Menswear Index</p>
+          <p className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.18em] text-ink uppercase">
+            <LogoMark size={16} /> Menswear Index
+          </p>
         </div>
       </footer>
 
