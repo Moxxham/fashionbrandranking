@@ -136,7 +136,7 @@ interface Brand {
 }
 ```
 
-**Scaling notes (designed for 2,000+ records; currently 2,000)**
+**Scaling notes (designed for 2,000+ records; currently 2,203)**
 
 - Records are flat and fixed-shape, at about 0.7 KB each: the 2,000-record dataset is about 1.4 MB raw and about 160 KB gzipped.
 - Only raw sub-scores are authoritative. Composites and ranks are derived, so a weight change never needs a data migration.

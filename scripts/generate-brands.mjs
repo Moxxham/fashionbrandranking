@@ -65,6 +65,7 @@ const COUNTRIES = {
   KR: 'South Korea', BE: 'Belgium', CH: 'Switzerland', IE: 'Ireland', HK: 'Hong Kong', HU: 'Hungary', RO: 'Romania',
   GG: 'Guernsey', AT: 'Austria', FI: 'Finland', IN: 'India', NZ: 'New Zealand', TR: 'Turkey', IS: 'Iceland', BR: 'Brazil', SK: 'Slovakia', ID: 'Indonesia', TW: 'Taiwan', CN: 'China',
   PL: 'Poland', CZ: 'Czechia', MX: 'Mexico', AR: 'Argentina', CO: 'Colombia', PE: 'Peru', IL: 'Israel', ZA: 'South Africa', NG: 'Nigeria', SG: 'Singapore',
+  ZZ: 'Origin unknown', // ISO user-assigned code: brands whose origin isn't confidently known
 };
 
 /* ================================================================== */
@@ -237,7 +238,8 @@ const slugify = (s) =>
 function expandRoster(row, today) {
   const [name, cc, city, founded, category, tier, s, sigs, summary, confidence = 0.8] = row;
   const scores = Object.fromEntries(DIMENSIONS.map((d, i) => [d, s[i]]));
-  const { strengths, caveats } = editorialFromScores(scores);
+  // provisional rows (minimum confidence) carry placeholder scores, so no strengths/caveats are derived from them
+  const { strengths, caveats } = confidence <= MIN_CONFIDENCE ? { strengths: [], caveats: [] } : editorialFromScores(scores);
   return {
     id: slugify(name),
     name,
