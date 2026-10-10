@@ -301,6 +301,8 @@ interface Brand {
   editorial: { summary: string; strengths: string[]; caveats: string[] };
   tags?: string[];
   website?: string;
+  /** Path to a self-hosted logo (public/logos/<id>.<ext>), attached by the generator. */
+  logo?: string;
   /** Retailers the brand regularly turns up at (editorial flag, not live stock). */
   stockists?: RetailerId[];
   status?: 'active' | 'hiatus' | 'defunct';
@@ -526,6 +528,7 @@ function sanitizeBrand(raw: unknown): Brand | null {
     editorial: { summary: str(editorial.summary) ?? '', strengths: strArr(editorial.strengths), caveats: strArr(editorial.caveats) },
     tags: strArr(raw.tags).map((t) => t.toLowerCase()),
     website: str(raw.website),
+    logo: typeof raw.logo === 'string' && /^\/logos\/[a-z0-9-]+\.(svg|png|webp|jpe?g)$/.test(raw.logo) ? raw.logo : undefined,
     stockists: strArr(raw.stockists).filter((r): r is RetailerId => (RETAILER_IDS as readonly string[]).includes(r)),
     status: raw.status === 'hiatus' || raw.status === 'defunct' ? raw.status : 'active',
     provenance,
@@ -906,15 +909,23 @@ function monogramOf(name: string): string {
 }
 
 /**
- * Brand mark: a generated monogram on a quiet plate. Real logos
- * are trademarks, would need a network fetch per brand and would clash in
- * style; a monogram gives each row its own shape without any of that.
+ * Brand mark: the brand's own logo when one is self-hosted in public/logos/
+ * (fetched by scripts/fetch-logos.mjs or dropped in by hand), otherwise a
+ * generated monogram. A logo that fails to load falls back to the monogram.
  */
-const Monogram = memo(function Monogram({ name, size = 'row' }: { name: string; size?: 'row' | 'large' }) {
+const Monogram = memo(function Monogram({ name, logo, size = 'row' }: { name: string; logo?: string; size?: 'row' | 'large' }) {
+  const [failed, setFailed] = useState(false);
+  const dims = { row: 'h-8 w-8 sm:h-10 sm:w-10', large: 'h-16 w-16' }[size];
+  if (logo && !failed) {
+    return (
+      <span aria-hidden className={cx('inline-flex shrink-0 items-center justify-center overflow-hidden bg-white ring-1 ring-rule ring-inset', size === 'row' ? 'p-1' : 'p-1.5', dims)}>
+        <img src={logo} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} className="h-full w-full object-contain" />
+      </span>
+    );
+  }
   const m = monogramOf(name);
-  const dims = { row: 'h-10 w-10', large: 'h-16 w-16' }[size];
   const font = {
-    row: ['text-[15px]', 'text-[13px]', 'text-[11px]'],
+    row: ['text-[13px] sm:text-[15px]', 'text-[12px] sm:text-[13px]', 'text-[10px] sm:text-[11px]'],
     large: ['text-[24px]', 'text-[20px]', 'text-[16px]'],
   }[size][Math.min(m.length, 3) - 1];
   return (
@@ -1401,9 +1412,7 @@ const LeaderRow = memo(function LeaderRow({ brand: b, saved, sortKey, onOpen, on
     <div className={cx('group relative grid h-full items-center gap-x-3 border-b border-rule px-1 transition-colors hover:bg-panel sm:px-4 md:gap-x-4', LEADER_COLS)}>
       <RankBadge rank={b.rank} tied={b.tied} />
       <div className="flex min-w-0 items-center gap-3">
-        <span className="hidden sm:inline-flex">
-          <Monogram name={b.name} />
-        </span>
+        <Monogram name={b.name} logo={b.logo} />
         <div className="min-w-0">
           <button
             type="button"
@@ -1627,6 +1636,12 @@ function BrandDrawer({
       b.production?.length && ['Production', b.production.join(', ')],
       b.ownership && ['Ownership', `${b.ownership.type.replace('-', ' ')}${b.ownership.parent ? ` · ${b.ownership.parent}` : ''}`],
       ['Buy at', <span title="An instant buy once the ticket shows this discount off RRP. Set by the index score and value integrity.">{b.buyAt}% off RRP or more</span>],
+      b.website && [
+        'Website',
+        <a href={b.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline decoration-rule-strong underline-offset-4 hover:decoration-ink">
+          {b.website.replace(/^https?:\/\//, '')} <ArrowUpRight size={13} aria-hidden />
+        </a>,
+      ],
       stockist && [
         'Stockist',
         <a href={stockist.search(searchTerm(b.name))} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline decoration-rule-strong underline-offset-4 hover:decoration-ink">
@@ -1648,7 +1663,7 @@ function BrandDrawer({
 
         <div className="px-6 pt-8 pb-16 sm:px-10">
           <div className="flex items-center gap-4">
-            <Monogram name={b.name} size="large" />
+            <Monogram name={b.name} logo={b.logo} size="large" />
             <div className="min-w-0 text-[12px] leading-relaxed text-muted">
               <div>
                 Ranked <span className="tnum text-ink">#{b.rank}</span> of <span className="tnum">{nf.format(total)}</span> overall

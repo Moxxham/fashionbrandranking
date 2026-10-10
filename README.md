@@ -58,6 +58,14 @@ The pipeline combines three record sources, attaches stockist flags, and validat
 
 Pass `--date` to make the output byte-for-byte reproducible.
 
+## Logos
+
+Each brand on the ranking shows its logo where one exists, and a generated monogram otherwise. Logos are self-hosted in `public/logos/`, so visitors never call a third party.
+
+- **Add or replace one by hand:** save the file as `public/logos/<brand-id>.svg` (or `.png`, `.webp`, `.jpg`) and run `npm run data:generate`. The brand id is the slug in its deep link, e.g. `/#brand/edward-green` → `edward-green.svg`. An SVG wins over a bitmap with the same id, and a file whose name matches no brand is reported.
+- **Fetch automatically:** official websites live in [`scripts/websites.mjs`](scripts/websites.mjs). `node scripts/fetch-logos.mjs` downloads each brand's 128px icon via Google's favicon service. It first checks that the homepage title names the brand (a wrong domain would mean a wrong logo) and skips icons under 28px. It never overwrites existing files, and ids in `NO_LOGO` are skipped because their icon was wrong. Use `--only id,id` to target brands.
+- Logos are trademarks of their owners and appear only to identify each brand.
+
 ## Performance notes
 
 - One `useMemo` pass handles search, facet counts and filtering over the whole catalogue. `useDeferredValue` keeps typing responsive.

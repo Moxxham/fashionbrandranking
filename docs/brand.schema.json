@@ -102,6 +102,11 @@
         },
         "tags": { "type": "array", "items": { "type": "string" } },
         "website": { "type": "string", "format": "uri" },
+        "logo": {
+          "type": "string",
+          "pattern": "^/logos/[a-z0-9-]+\\.(svg|png|webp|jpe?g)$",
+          "description": "Self-hosted logo path. Attached by the generator from files in public/logos/ named <id>.<ext>."
+        },
         "stockists": {
           "type": "array",
           "uniqueItems": true,

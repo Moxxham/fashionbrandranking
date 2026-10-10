@@ -19,6 +19,8 @@
  *
  * Stockist flags (where to buy) come from scripts/stockists.mjs and are
  * attached after all sources merge, so an ingested override keeps them.
+ * Websites come from scripts/websites.mjs (by brand name), and logos are
+ * any file in public/logos/ named <brand-id>.svg|png|jpg|webp.
  *
  * Records are validated and scored in batches of --batch.
  *
@@ -35,11 +37,12 @@
  *   --date <iso>       pin generatedAt / updatedAt (reproducible builds)
  *   --help
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { ROSTER } from './roster.mjs';
 import { RETAILER_IDS, STOCKISTS } from './stockists.mjs';
+import { WEBSITES } from './websites.mjs';
 
 /* ================================================================== */
 /* Methodology — keep in sync with §1/§3 of src/App.tsx.               */
@@ -168,6 +171,7 @@ function validateBrand(b) {
   if (!b.editorial || typeof b.editorial.summary !== 'string' || !Array.isArray(b.editorial.strengths) || !Array.isArray(b.editorial.caveats)) e.push('editorial { summary, strengths[], caveats[] } required');
   if (b.ownership && !OWNERSHIP.includes(b.ownership.type)) e.push('ownership.type invalid');
   if (b.priceUSD && !(b.priceUSD.from > 0 && b.priceUSD.to >= b.priceUSD.from)) e.push('priceUSD.from/to invalid');
+  if (b.logo !== undefined && !(typeof b.logo === 'string' && /^\/logos\/[a-z0-9-]+\.(svg|png|webp|jpe?g)$/.test(b.logo))) e.push('logo must be /logos/<id>.<ext>');
   if (b.stockists !== undefined && (!Array.isArray(b.stockists) || b.stockists.some((r) => !RETAILER_IDS.includes(r)))) e.push(`stockists must be retailer ids from ${RETAILER_IDS.join(', ')}`);
   if (b.provenance === 'generated') e.push('synthetic/placeholder records are not allowed — real brands only');
   else if (!['curated', 'ingested'].includes(b.provenance)) e.push('provenance invalid');
@@ -389,8 +393,43 @@ function main() {
       stockistCounts[retailer]++;
     }
   }
-  if (opts.strict && (counts.rejected || counts.duplicates || counts.unresolvedStockists))
-    die(`${counts.rejected} rejected, ${counts.duplicates} duplicate record(s), ${counts.unresolvedStockists} unresolved stockist id(s) (--strict)`);
+  // 5: official websites (by brand name)
+  const idByName = new Map([...byId.values()].map((r) => [r.name, r.id]));
+  let websites = 0;
+  for (const [name, domain] of Object.entries(WEBSITES)) {
+    const id = idByName.get(name);
+    if (!id) {
+      counts.unresolvedWebsites = (counts.unresolvedWebsites ?? 0) + 1;
+      log(`  ⚠ websites: no brand named "${name}"`);
+      continue;
+    }
+    byId.set(id, { ...byId.get(id), website: `https://${domain}` });
+    websites++;
+  }
+
+  // 6: logos — public/logos/<id>.<ext>; a hand-made SVG wins over a fetched bitmap
+  const LOGO_DIR = resolve('public/logos');
+  const LOGO_EXT = ['svg', 'png', 'webp', 'jpg', 'jpeg'];
+  let logos = 0;
+  if (existsSync(LOGO_DIR)) {
+    const files = readdirSync(LOGO_DIR).filter((f) => LOGO_EXT.includes(f.split('.').pop().toLowerCase()));
+    const byLogoId = new Map();
+    for (const f of files.sort((a, b) => LOGO_EXT.indexOf(a.split('.').pop()) - LOGO_EXT.indexOf(b.split('.').pop()))) {
+      const id = f.replace(/\.[a-z]+$/i, '');
+      if (!byLogoId.has(id)) byLogoId.set(id, f);
+    }
+    for (const [id, f] of byLogoId) {
+      if (!byId.has(id)) {
+        log(`  ⚠ logos: "${f}" matches no brand id — rename it to <brand-id>.${f.split('.').pop()}`);
+        continue;
+      }
+      byId.set(id, { ...byId.get(id), logo: `/logos/${f}` });
+      logos++;
+    }
+  }
+
+  if (opts.strict && (counts.rejected || counts.duplicates || counts.unresolvedStockists || counts.unresolvedWebsites))
+    die(`${counts.rejected} rejected, ${counts.duplicates} duplicate record(s), ${counts.unresolvedStockists} unresolved stockist id(s), ${counts.unresolvedWebsites ?? 0} unresolved website name(s) (--strict)`);
 
   // score + rank
   const brands = rankAll([...byId.values()]);
@@ -423,7 +462,7 @@ function main() {
   const byCat = {};
   for (const b of brands) byCat[b.category] = (byCat[b.category] ?? 0) + 1;
   log(`  by discipline: ${Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} ${n}`).join(' · ')}`);
-  log(`  stockists: ${Object.entries(stockistCounts).map(([r, n]) => `${r} ${n}`).join(' · ')}`);
+  log(`  stockists: ${Object.entries(stockistCounts).map(([r, n]) => `${r} ${n}`).join(' · ')} · websites ${websites} · logos ${logos}`);
   log(`  composite p10 ${pct(0.1)} · median ${pct(0.5)} · p90 ${pct(0.9)} · max ${scoresSorted.at(-1)}`);
   log(`  top 5: ${brands.slice(0, 5).map((b) => `${b.rank}. ${b.name} (${b.composite})`).join(' · ')}`);
   log(`  done in ${(performance.now() - t0).toFixed(0)} ms`);
