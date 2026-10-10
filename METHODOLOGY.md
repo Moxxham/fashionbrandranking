@@ -136,9 +136,9 @@ interface Brand {
 }
 ```
 
-**Scaling notes (designed for 2,000+ records; currently 1,000)**
+**Scaling notes (designed for 2,000+ records; currently 2,000)**
 
-- Records are flat and fixed-shape, at about 0.9 KB each: 2,000 records come to about 1.9 MB raw and about 300 KB with brotli or gzip.
+- Records are flat and fixed-shape, at about 0.7 KB each: the 2,000-record dataset is about 1.4 MB raw and about 160 KB gzipped.
 - Only raw sub-scores are authoritative. Composites and ranks are derived, so a weight change never needs a data migration.
 - The search index is built once per load from name, signatures, tags, city, country, discipline, tier and parent group.
 - `provenance` separates editorial records from ingested ones. The generator and the app both reject any record marked `generated`.
