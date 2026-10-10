@@ -71,4 +71,4 @@ Each brand on the ranking shows its logo where one exists, and a generated monog
 - One `useMemo` pass handles search, facet counts and filtering over the whole catalogue. `useDeferredValue` keeps typing responsive.
 - **Fuzzy search:** prefix and word matching, bounded Damerau-Levenshtein for typos ("andersen shepard" → Anderson & Sheppard), subsequence matching, diacritic folding, and AND semantics across query tokens.
 - **Leaderboard:** window-virtualised with fixed 64 px rows and revealed 25 at a time, so only about 20 DOM rows exist however large the catalogue grows (tested at 2,000).
-- Bookmarks and the personal tier list (S/A/B/C) live in `localStorage`, sync across tabs, and fail safe when storage is unavailable.
+- Bookmarks, the personal tier list (S/A/B/C) and hidden disciplines live in `localStorage`, sync across tabs, and fail safe when storage is unavailable. Hiding a discipline removes its brands from the ranking on this device only; ranks keep their catalogue-wide numbers.

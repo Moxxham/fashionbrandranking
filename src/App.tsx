@@ -28,6 +28,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  EyeOff,
   Footprints,
   GraduationCap,
   Hammer,
@@ -787,6 +788,44 @@ function useSaved() {
   return { saved, toggle, setTier, remove, clear };
 }
 
+/** Disciplines the viewer has hidden from the ranking; a per-device preference, not a filter. */
+const HIDDEN_KEY = 'menswear-index:hidden-categories:v1';
+
+function readHidden(): CategoryId[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((c): c is CategoryId => (CATEGORY_IDS as readonly string[]).includes(c)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function useHiddenCategories() {
+  const [hidden, setHidden] = useState<CategoryId[]>(readHidden);
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (!hydrated.current) {
+      hydrated.current = true;
+      return;
+    }
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));
+    } catch {
+      /* storage unavailable — the choice lasts for this visit only */
+    }
+  }, [hidden]);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === HIDDEN_KEY) setHidden(readHidden());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+  const toggleHidden = useCallback((c: CategoryId) => setHidden((h) => (h.includes(c) ? h.filter((x) => x !== c) : [...h, c])), []);
+  const showAll = useCallback(() => setHidden([]), []);
+  return { hidden, toggleHidden, showAll };
+}
+
 /* ================================================================== */
 /* §8  UI COMPONENTS                                                   */
 /* ================================================================== */
@@ -1177,6 +1216,9 @@ function ControlPanel({
   resultCount,
   total,
   searchRef,
+  hidden,
+  onToggleHidden,
+  onShowAll,
 }: {
   filters: Filters;
   setFilters: (f: (prev: Filters) => Filters) => void;
@@ -1184,6 +1226,9 @@ function ControlPanel({
   resultCount: number;
   total: number;
   searchRef: React.RefObject<HTMLInputElement | null>;
+  hidden: CategoryId[];
+  onToggleHidden: (c: CategoryId) => void;
+  onShowAll: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const activeCount = filters.categories.length + filters.tiers.length + (filters.country ? 1 : 0) + (filters.minScore > 0 ? 1 : 0) + (filters.stockist ? 1 : 0);
@@ -1197,7 +1242,7 @@ function ControlPanel({
   const countryName = facets.countries.find((c) => c.code === filters.country)?.name ?? filters.country;
   // every active filter as a removable chip, so the collapsed panel never hides state
   const activeChips: { key: string; label: string; clear: () => void }[] = [
-    ...filters.categories.map((c) => ({ key: `c-${c}`, label: CATEGORY_BY_ID[c].label, clear: () => set('categories', filters.categories.filter((x) => x !== c)) })),
+    ...filters.categories.filter((c) => !hidden.includes(c)).map((c) => ({ key: `c-${c}`, label: CATEGORY_BY_ID[c].label, clear: () => set('categories', filters.categories.filter((x) => x !== c)) })),
     ...filters.tiers.map((t) => ({ key: `t-${t}`, label: TIER_BY_ID[t].label, clear: () => set('tiers', filters.tiers.filter((x) => x !== t)) })),
     ...(filters.country ? [{ key: 'country', label: countryName, clear: () => set('country', '') }] : []),
     ...(filters.minScore ? [{ key: 'min', label: `Score ${filters.minScore}+`, clear: () => set('minScore', 0) }] : []),
@@ -1270,8 +1315,27 @@ function ControlPanel({
         <div>
           <Eyebrow className="mb-2">Discipline</Eyebrow>
           <div className="flex flex-wrap gap-1.5">
-            {CATEGORIES.map((c) => (
+            {CATEGORIES.filter((c) => !hidden.includes(c.id)).map((c) => (
               <Chip key={c.id} active={filters.categories.includes(c.id)} count={facets.categoryCounts[c.id]} onClick={() => set('categories', toggleIn(filters.categories, c.id))}>
+                {c.label}
+              </Chip>
+            ))}
+          </div>
+        </div>
+        <div role="group" aria-label="Hide disciplines">
+          <div className="mb-2 flex items-baseline gap-3">
+            <Eyebrow>Hide disciplines</Eyebrow>
+            <span className="text-[11.5px] text-muted">Saved on this device</span>
+            {hidden.length > 0 && (
+              <button type="button" onClick={onShowAll} className="text-[11.5px] text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink">
+                Show all
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {CATEGORIES.map((c) => (
+              <Chip key={c.id} active={hidden.includes(c.id)} onClick={() => onToggleHidden(c.id)}>
+                {hidden.includes(c.id) && <EyeOff size={12} aria-hidden />}
                 {c.label}
               </Chip>
             ))}
@@ -1347,6 +1411,20 @@ function ControlPanel({
             Clear all
           </button>
         )}
+        {hidden.map((c) => (
+          <button
+            key={`h-${c}`}
+            type="button"
+            onClick={() => onToggleHidden(c)}
+            aria-label={`Show ${CATEGORY_BY_ID[c].label} again`}
+            title="Hidden on this device. Click to show again."
+            className="inline-flex h-7 items-center gap-1.5 border border-dashed border-rule-strong pr-1.5 pl-2 text-muted transition-colors hover:border-ink hover:text-ink"
+          >
+            <EyeOff size={12} aria-hidden />
+            {CATEGORY_BY_ID[c].label}
+            <X size={12} aria-hidden />
+          </button>
+        ))}
       </div>
     </>
   );
@@ -1936,6 +2014,7 @@ function idFromHash(): string | null {
 export default function App() {
   const data = useDataset();
   const { saved, toggle, setTier, remove, clear } = useSaved();
+  const { hidden, toggleHidden, showAll } = useHiddenCategories();
   const ranked = useMemo(() => rankBrands(data.brands, data.weights), [data.brands, data.weights]);
   const medians = useMemo(() => dimensionMedians(ranked), [ranked]);
   const byId = useMemo(() => new Map(ranked.map((b) => [b.id, b])), [ranked]);
@@ -1957,7 +2036,7 @@ export default function App() {
     const tierCounts = Object.fromEntries(TIER_IDS.map((t) => [t, 0])) as Record<TierId, number>;
     const stockistCounts = Object.fromEntries(RETAILER_IDS.map((r) => [r, 0])) as Record<RetailerId, number>;
     const countryMap = new Map<string, { code: string; name: string; count: number }>();
-    const cats = deferred.categories;
+    const cats = deferred.categories.filter((c) => !hidden.includes(c));
     const tiers = deferred.tiers;
     const hits: { b: RankedBrand; rel: number }[] = [];
 
@@ -1965,6 +2044,8 @@ export default function App() {
       const c = countryMap.get(b.origin.countryCode) ?? { code: b.origin.countryCode, name: b.origin.country, count: 0 };
       c.count++;
       countryMap.set(b.origin.countryCode, c);
+
+      if (hidden.includes(b.category)) continue;
 
       let rel = 0;
       if (hasQuery) {
@@ -2013,7 +2094,7 @@ export default function App() {
       results: hits.map((h) => h.b),
       facets: { categoryCounts, tierCounts, stockistCounts, countries: [...countryMap.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) },
     };
-  }, [ranked, deferred]);
+  }, [ranked, deferred, hidden]);
 
   /* ----- deep links: #brand/<id> ----- */
   const [selectedId, setSelectedId] = useState<string | null>(idFromHash);
@@ -2091,6 +2172,9 @@ export default function App() {
               resultCount={results.length}
               total={ranked.length}
               searchRef={searchRef}
+              hidden={hidden}
+              onToggleHidden={toggleHidden}
+              onShowAll={showAll}
             />
             <div className={cx('transition-opacity duration-150', stale && 'opacity-60')}>
               {results.length === 0 ? (
