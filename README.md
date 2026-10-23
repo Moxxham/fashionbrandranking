@@ -66,6 +66,10 @@ Each brand on the ranking shows its logo where one exists, and a generated monog
 - **Fetch automatically:** official websites live in [`scripts/websites.mjs`](scripts/websites.mjs). `node scripts/fetch-logos.mjs` downloads each brand's 128px icon via Google's favicon service. It first checks that the homepage title names the brand (a wrong domain would mean a wrong logo) and skips icons under 28px. It never overwrites existing files, and ids in `NO_LOGO` are skipped because their icon was wrong. Use `--only id,id` to target brands.
 - Logos are trademarks of their owners and appear only to identify each brand.
 
+## Browser extension
+
+A Manifest V3 extension for Chrome and Firefox shows each brand's score, tier and a breakdown next to its name on Yoox, Farfetch, SSENSE, Grailed, Vinted and eBay. It adds a buy-at verdict where the page shows a struck-through RRP. It syncs daily from `/extension.json`, which the generator writes beside `brands.json`. Build it with `npm run extension:build`; see [`extension/README.md`](extension/README.md).
+
 ## Performance notes
 
 - One `useMemo` pass handles search, facet counts and filtering over the whole catalogue. `useDeferredValue` keeps typing responsive.

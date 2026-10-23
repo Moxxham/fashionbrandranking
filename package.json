@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "data:generate": "node scripts/generate-brands.mjs --out public/brands.json --strict"
+    "data:generate": "node scripts/generate-brands.mjs --out public/brands.json --strict",
+    "extension:build": "node scripts/build-extension.mjs"
   },
   "engines": {
     "node": ">=20.19"

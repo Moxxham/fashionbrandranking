@@ -43,6 +43,7 @@ import { performance } from 'node:perf_hooks';
 import { ROSTER } from './roster.mjs';
 import { RETAILER_IDS, STOCKISTS } from './stockists.mjs';
 import { WEBSITES } from './websites.mjs';
+import { ALIASES } from './aliases.mjs';
 
 /* ================================================================== */
 /* Methodology — keep in sync with §1/§3 of src/App.tsx.               */
@@ -57,6 +58,10 @@ const WEIGHTS = { material: 0.2, construction: 0.2, design: 0.15, longevity: 0.1
 const BLEND = 0.75;
 const PRIOR = 60;
 const MIN_CONFIDENCE = 0.5;
+/** Buy-at threshold (discount off RRP) — keep in sync with BUY_AT in src/App.tsx. */
+const BUY_AT = { base: 60, quality: 0.9, value: 0.4, min: 10, max: 70, step: 5 };
+const buyAtOf = (b) =>
+  Math.min(BUY_AT.max, Math.max(BUY_AT.min, Math.round((BUY_AT.base - BUY_AT.quality * (b.composite - PRIOR) - BUY_AT.value * (b.scores.value - PRIOR)) / BUY_AT.step) * BUY_AT.step));
 
 const CATEGORIES = ['tailoring', 'shirting', 'trad', 'heritage', 'denim', 'country', 'technical', 'designer', 'contemporary', 'streetwear', 'essentials', 'knitwear', 'footwear', 'accessories'];
 const TIERS = ['atelier', 'luxury', 'premium', 'accessible', 'mainstream'];
@@ -452,6 +457,43 @@ function main() {
       ? brands.map((b) => JSON.stringify(b)).join('\n') + '\n'
       : JSON.stringify(envelope, null, opts.pretty ? 2 : undefined) + '\n';
   writeFileSync(outPath, body);
+
+  // compact lookup for the browser extension, written beside the dataset
+  if (opts.format === 'json') {
+    const byName = new Map(brands.map((b) => [b.name, b]));
+    const aliasOf = new Map();
+    for (const [name, list] of Object.entries(ALIASES)) {
+      const b = byName.get(name);
+      if (!b) {
+        counts.unresolvedAliases = (counts.unresolvedAliases ?? 0) + 1;
+        log(`  ⚠ aliases: no brand named "${name}"`);
+        continue;
+      }
+      aliasOf.set(b.id, list);
+    }
+    if (opts.strict && counts.unresolvedAliases) die(`${counts.unresolvedAliases} unresolved alias name(s) (--strict)`);
+    const ext = {
+      v: 1,
+      generatedAt: envelope.generatedAt,
+      dimensions: DIMENSIONS,
+      // [id, name, aliases, composite, rank, tier, buyAt, scores[8], category, provisional]
+      brands: brands.map((b) => [
+        b.id,
+        b.name,
+        aliasOf.get(b.id) ?? [],
+        b.composite,
+        b.rank,
+        b.tier,
+        buyAtOf(b),
+        DIMENSIONS.map((d) => b.scores[d]),
+        b.category,
+        b.confidence <= MIN_CONFIDENCE ? 1 : 0,
+      ]),
+    };
+    const extPath = resolve(dirname(outPath), 'extension.json');
+    writeFileSync(extPath, JSON.stringify(ext) + '\n');
+    log(`  extension lookup → ${extPath.replace(/\\/g, '/').split('/').slice(-2).join('/')} (${(Buffer.byteLength(JSON.stringify(ext)) / 1024).toFixed(0)} KB)`);
+  }
 
   // report
   const scoresSorted = brands.map((b) => b.composite).sort((a, b) => a - b);
