@@ -163,8 +163,26 @@
   // a short text that is a number with a currency marker, allowing a few stray characters around it
   const PRICE_RE = /^[^\d]{0,5}\d[\d.,\s]*[^\d]{0,5}$/;
   const CURRENCY_RE = /[£$€¥]|\b(?:usd|gbp|eur|chf|sek|dkk|nok|pln|zł|kr|kč|ft|lei)\b/i;
+  // words a price may carry in the same element ("NOW £ 46", "RRP £298", "£ 298 (-84%)"), stripped before reading it
+  const PRICE_WORDS = /^(?:now|sale price|sale|our price|price|rrp|was|reference price|ref\.? price|original price|retail price|list price|regular price|uvp|statt)\s*:?\s*/i;
+  const PRICE_PCT = /\s*\(?\s*[-−–]\s*\d{1,2}\s*%\s*\)?\s*$/;
+  const cleanPrice = (t) => t.trim().replace(PRICE_WORDS, '').replace(PRICE_PCT, '');
   const looksLikePrice = (t) => PRICE_RE.test(t) && CURRENCY_RE.test(t);
   const isLeaf = (el) => el.childElementCount === 0;
+  // a price the page calls the RRP in words, without striking it through (Yoox: "Reference price £ 298")
+  const RRP_LABEL = /\b(?:rrp|was|reference price|ref\.? price|original price|retail price|list price|regular price|compare at|uvp|statt)\b/i;
+  const PRICE_COUNT = /[£$€¥]\s?\d|\d[\d.,]*\s?(?:€|kr|zł|eur|usd|gbp)\b/gi;
+  function labelledRrp(el) {
+    if (RRP_LABEL.test(el.textContent)) return true;
+    for (let n = el, d = 0; n && d < 3; n = n.parentElement, d++) {
+      // a label just before the price, or before the block holding it
+      const prev = n.previousElementSibling;
+      if (prev && prev.textContent.length <= 30 && !/\d/.test(prev.textContent) && RRP_LABEL.test(prev.textContent)) return true;
+      // a small block holding this price and its label, and no other price
+      if (d > 0 && n.textContent.length <= 40 && (n.textContent.match(PRICE_COUNT) || []).length === 1 && RRP_LABEL.test(n.textContent)) return true;
+    }
+    return false;
+  }
 
   function parseAmount(text) {
     let t = text.replace(/[^\d.,]/g, '');
@@ -184,15 +202,16 @@
     [el, el.parentElement].some((n) => n && WAS_CLASS.test(`${n.className || ''} ${n.getAttribute?.('data-test') || ''} ${n.getAttribute?.('data-testid') || ''}`));
 
   /**
-   * Discount (%) when the card shows a struck-through RRP and a lower current price. On a
+   * Discount (%) when the card shows an RRP (struck through, or labelled "RRP", "Was",
+   * "Reference price" and so on) and a lower current price. On a
    * full-price retailer, a single unstruck price is the RRP itself, so 0. Otherwise null.
    */
   function readDiscount(from) {
     let node = from;
     for (let depth = 0; depth < 7 && node && node !== document.body; depth++, node = node.parentElement) {
-      const prices = [...node.querySelectorAll('span, div, p, s, del, strong, b, ins')]
-        .filter((el) => isLeaf(el) && el.textContent.trim().length <= 20 && looksLikePrice(el.textContent.trim()))
-        .map((el) => ({ el, value: parseAmount(el.textContent), was: struck(el) }))
+      const prices = [...node.querySelectorAll('span, div, p, s, del, strong, b, ins, mark, em')]
+        .filter((el) => isLeaf(el) && el.textContent.trim().length <= 32 && looksLikePrice(cleanPrice(el.textContent)))
+        .map((el) => ({ el, value: parseAmount(cleanPrice(el.textContent)), was: struck(el) || labelledRrp(el) }))
         .filter((p) => p.value > 0);
       if (!prices.length) continue;
       const was = prices.filter((p) => p.was).map((p) => p.value);

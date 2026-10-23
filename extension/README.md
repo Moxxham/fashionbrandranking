@@ -51,7 +51,8 @@ deal score = index score + (discount − buy-at threshold) ÷ 0.9      (clamped 
 The 0.9 comes from the buy-at formula, which lowers the threshold by 0.9 discount points for each index point. So the extension reuses the index's own exchange rate between quality and discount rather than adding a new one. At exactly the threshold, the deal score equals the index score. Each point of discount past it adds about 1.1, and each point short of it takes about 1.1 away. For example, Gucci (index 72.2, buy at 55%) at €40 instead of €520 is 92% off and scores 100. Uniqlo (index 67.0, buy at 40%) scores 67.0 at 40% off and 22.6 at full price. A brand with a high Value score has a lower threshold, so its full price already counts as fairer.
 
 **Reading the RRP.** The extension never guesses an RRP; a listing without one keeps the index score. It reads a price as the RRP only when:
-- it's struck through, whether by `<s>`/`<del>` markup, a CSS line-through, or a class name such as `line-through` or `old-price`; or
+- it's struck through, whether by `<s>`/`<del>` markup, a CSS line-through, or a class name such as `line-through` or `old-price`;
+- the page labels it in words: "RRP", "Was", "Reference price" (Yoox), "Original price", "Retail price", "List price", "Regular price", "Compare at", "UVP" or "statt". The label must be in the same element, just before it, or in a small block holding no other price. Label words and a trailing "(-84%)" are ignored when reading a price, so "NOW £ 46" reads as £46; or
 - the site is a full-price retailer verified on its real markup (currently SSENSE only), and the card shows exactly one price. That price is the RRP, so the listing is 0% off. Two different unstruck prices could be a sale it failed to read, so they count as unknown.
 
 Resale listings (Vinted, Grailed, most of eBay) have no RRP. Estimating one would mean inventing what each brand's item costs new, so they get no deal score.
