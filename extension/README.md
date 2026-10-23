@@ -42,13 +42,24 @@ npm run extension:build    # writes extension/dist/chrome and extension/dist/fir
 
 Brand names that are everyday words ("Next", "On", "Gap", "Closed", …) are matched only where the page labels the text as a brand, never by scanning titles.
 
-**Deal score.** The index score adjusted for the price paid:
+**Deal score.** The index score adjusted for the price paid, weighted towards the brand:
 
 ```
-deal score = index score + (discount − buy-at threshold) ÷ 0.9      (clamped to 0–100)
+price-adjusted = index score + (discount − buy-at threshold) ÷ 0.9
+deal score     = average of index score and price-adjusted score,
+                 at most 15 above the index score, clamped to 0–100
 ```
 
-The 0.9 comes from the buy-at formula, which lowers the threshold by 0.9 discount points for each index point. So the extension reuses the index's own exchange rate between quality and discount rather than adding a new one. At exactly the threshold, the deal score equals the index score. Each point of discount past it adds about 1.1, and each point short of it takes about 1.1 away. For example, Gucci (index 72.2, buy at 55%) at €40 instead of €520 is 92% off and scores 100. Uniqlo (index 67.0, buy at 40%) scores 67.0 at 40% off and 22.6 at full price. A brand with a high Value score has a lower threshold, so its full price already counts as fairer.
+The 0.9 comes from the buy-at formula, which lowers the threshold by 0.9 discount points for each index point. So the extension reuses the index's own exchange rate between quality and discount rather than adding a new one.
+
+RRPs are often inflated, especially at outlets, so the deal score leans on the brand. Averaging halves the price's pull: each point of discount past the threshold adds about 0.55, and each point short of it takes about 0.55 away. A discount can add at most 15 points, so a headline "−85%" can't carry a middling brand into the top bands. At exactly the threshold, the deal score equals the index score.
+
+Examples:
+- Gucci (index 72.2, buy at 55%) at €40 instead of €520 is 92% off. It scores 87.2, which is the full +15.
+- Buscemi (index 61.8, buy at 65%) at £46 from a £298 "reference price" scores 72.9.
+- Uniqlo (index 67.0, buy at 40%) scores 67.0 at 40% off and 44.8 at full price.
+
+A brand with a high Value score has a lower threshold, so its full price already counts as fairer. The weight and the cap are `DEAL_WEIGHT` and `DEAL_MAX_GAIN` in `src/content.js`.
 
 **Reading the RRP.** The extension never guesses an RRP; a listing without one keeps the index score. It reads a price as the RRP only when:
 - it's struck through, whether by `<s>`/`<del>` markup, a CSS line-through, or a class name such as `line-through` or `old-price`;

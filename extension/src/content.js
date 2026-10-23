@@ -46,12 +46,19 @@
   const fmt = (v) => (v >= 100 ? '100' : v.toFixed(1));
 
   // Deal score: the index score adjusted for the price paid, only where the page shows the RRP.
-  // The buy-at formula moves the threshold 0.9 discount points per index point, so each point
-  // of discount past the brand's threshold is worth 1/0.9 index points (and each point short
-  // of it costs as much). At exactly the threshold the deal score equals the index score.
+  // The buy-at formula moves the threshold 0.9 discount points per index point, so the
+  // price-adjusted score is index + (discount - threshold) / 0.9. RRPs are often inflated, so
+  // the deal score is weighted towards the brand: it averages the index score with that
+  // price-adjusted score (so the price moves it half as far either way), and a discount can add
+  // at most DEAL_MAX_GAIN. At exactly the threshold the deal score equals the index score.
   const DEAL_RATE = 0.9;
+  const DEAL_WEIGHT = 0.5;
+  const DEAL_MAX_GAIN = 15;
+  const dealGain = (brand, discount) => (DEAL_WEIGHT * (discount - brand.buyAt)) / DEAL_RATE;
   const dealScore = (brand, discount) =>
-    discount == null ? null : Math.round(Math.max(0, Math.min(100, brand.composite + (discount - brand.buyAt) / DEAL_RATE)) * 10) / 10;
+    discount == null
+      ? null
+      : Math.round(Math.max(0, Math.min(100, brand.composite + Math.min(DEAL_MAX_GAIN, dealGain(brand, discount)))) * 10) / 10;
   // the score a listing is judged by: its deal score where there is one, else the brand's index score
   const mainScore = (brand, discount) => dealScore(brand, discount) ?? brand.composite;
 
@@ -320,7 +327,12 @@
         .map((d) => `<span>${DIM_LABELS[d]}</span><span class="bar"><i style="width:${b.scores[d]}%"></i></span><span class="num">${b.scores[d]}</span>`)
         .join('');
       const off = discount >= b.buyAt ? `<span class="ok">✓ ${discount}% off</span>` : `<span class="no">${discount}% off</span>`;
-      const gap = ds >= 100 ? 'capped at 100' : `${Math.abs(ds - b.composite).toFixed(1)} ${ds >= b.composite ? 'above' : 'below'} the index score`;
+      const gap =
+        ds >= 100
+          ? 'capped at 100'
+          : discount != null && dealGain(b, discount) > DEAL_MAX_GAIN
+            ? `${DEAL_MAX_GAIN} above the index score, the most a discount can add (RRPs are often inflated)`
+            : `${Math.abs(ds - b.composite).toFixed(1)} ${ds >= b.composite ? 'above' : 'below'} the index score`;
       const deal =
         discount == null
           ? `No RRP on this listing, so no deal score. Buy at <b>${b.buyAt}%</b> off RRP or more.`
