@@ -90,7 +90,9 @@ async function renderPage() {
   const scroll = list.scrollTop;
   list.replaceChildren(
     ...page.brands.map((b) => {
-      const [, bg, fg] = BANDS.find((x) => b.composite >= x[0]);
+      // the best deal score where a listing shows its RRP, otherwise the index score
+      const main = b.bestDeal ?? b.composite;
+      const [, bg, fg] = BANDS.find((x) => main >= x[0]);
       const li = document.createElement('li');
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -99,7 +101,8 @@ async function renderPage() {
       score.className = 'score';
       score.style.background = bg;
       score.style.color = fg;
-      score.textContent = b.composite.toFixed(1);
+      score.textContent = main >= 100 ? '100' : main.toFixed(1);
+      score.title = b.bestDeal != null ? `Best deal score here (index score ${b.composite.toFixed(1)})` : 'Index score';
       const mid = document.createElement('span');
       mid.style.minWidth = '0';
       const name = document.createElement('div');
@@ -107,7 +110,7 @@ async function renderPage() {
       name.textContent = b.name;
       const sub = document.createElement('div');
       sub.className = 'sub';
-      sub.textContent = `#${b.rank.toLocaleString('en-GB')} · ${TIER_SYMBOL[b.tier]} · ${b.count} listing${b.count === 1 ? '' : 's'}${b.provisional ? ' · provisional' : ''}`;
+      sub.textContent = `${b.bestDeal != null ? `Deal · index ${b.composite.toFixed(1)} · ` : ''}#${b.rank.toLocaleString('en-GB')} · ${TIER_SYMBOL[b.tier]} · ${b.count} listing${b.count === 1 ? '' : 's'}${b.provisional ? ' · provisional' : ''}`;
       mid.append(name, sub);
       const right = document.createElement('span');
       right.className = 'buy';

@@ -2,8 +2,8 @@
  *
  * Finds brand names on product grids and listings, and injects a badge with
  * the brand's index score, tier and a breakdown tooltip. Where the page shows
- * both an RRP and a sale price, it compares the discount with the brand's
- * buy-at threshold. Badges render in shadow DOM so site CSS can't reach them;
+ * both an RRP and a sale price, the badge shows a deal score instead: the
+ * index score adjusted for the discount against the brand's buy-at threshold. Badges render in shadow DOM so site CSS can't reach them;
  * a MutationObserver picks up cards added by infinite scroll.
  */
 (() => {
@@ -43,6 +43,17 @@
     [0, 'Poor', '#722426', '#fff'],
   ];
   const band = (v) => BANDS.find((b) => v >= b[0]);
+  const fmt = (v) => (v >= 100 ? '100' : v.toFixed(1));
+
+  // Deal score: the index score adjusted for the price paid, only where the page shows the RRP.
+  // The buy-at formula moves the threshold 0.9 discount points per index point, so each point
+  // of discount past the brand's threshold is worth 1/0.9 index points (and each point short
+  // of it costs as much). At exactly the threshold the deal score equals the index score.
+  const DEAL_RATE = 0.9;
+  const dealScore = (brand, discount) =>
+    discount == null ? null : Math.round(Math.max(0, Math.min(100, brand.composite + (discount - brand.buyAt) / DEAL_RATE)) * 10) / 10;
+  // the score a listing is judged by: its deal score where there is one, else the brand's index score
+  const mainScore = (brand, discount) => dealScore(brand, discount) ?? brand.composite;
 
   /* ------------------------------------------------------------------ */
   /* Sites                                                               */
@@ -57,10 +68,12 @@
    * card:  product cards; the brand is read from structured data, a "Brand:" title
    *        attribute, an exact-text leaf, or the start of a listing title.
    * title: listing-title elements whose text starts with the brand (eBay).
+   * fullPrice: the site sells new at retail, so a lone unstruck price is the RRP (0% off).
+   *        Only where verified on real markup; resale sites never qualify.
    */
   const SITES = [
     { id: 'vinted', name: 'Vinted', host: /(^|\.)vinted\.[a-z.]+$/, label: '[data-testid$="--description-title"]', card: null, title: null },
-    { id: 'ssense', name: 'SSENSE', host: /(^|\.)ssense\.com$/, label: '', card: 'a[href*="/product/"]', title: null },
+    { id: 'ssense', name: 'SSENSE', host: /(^|\.)ssense\.com$/, label: '', card: 'a[href*="/product/"]', title: null, fullPrice: true },
     { id: 'grailed', name: 'Grailed', host: /(^|\.)grailed\.com$/, label: '[class*="designer" i]', card: 'a[href*="/listings/"]', title: null },
     { id: 'farfetch', name: 'Farfetch', host: /(^|\.)farfetch\.com$/, label: '[data-component="ProductCardBrandName"],[data-component="ProductBrand"]', card: 'a[href*="/shopping/"]', title: null },
     { id: 'yoox', name: 'Yoox', host: /(^|\.)yoox\.com$/, label: '[class*="brand" i]', card: 'a[href*="/item"]', title: null },
@@ -170,7 +183,10 @@
     /line-through/.test(getComputedStyle(el).textDecorationLine || '') ||
     [el, el.parentElement].some((n) => n && WAS_CLASS.test(`${n.className || ''} ${n.getAttribute?.('data-test') || ''} ${n.getAttribute?.('data-testid') || ''}`));
 
-  /** Discount (%) when the card shows a struck-through RRP and a lower current price; otherwise null. */
+  /**
+   * Discount (%) when the card shows a struck-through RRP and a lower current price. On a
+   * full-price retailer, a single unstruck price is the RRP itself, so 0. Otherwise null.
+   */
   function readDiscount(from) {
     let node = from;
     for (let depth = 0; depth < 7 && node && node !== document.body; depth++, node = node.parentElement) {
@@ -181,7 +197,10 @@
       if (!prices.length) continue;
       const was = prices.filter((p) => p.was).map((p) => p.value);
       const now = prices.filter((p) => !p.was).map((p) => p.value);
-      if (!was.length || !now.length) return null;
+      if (!now.length) return null;
+      // one price and nothing struck through: full price on a retailer, unknown anywhere else
+      // (two different unstruck prices could be a sale we failed to read, so they stay unknown)
+      if (!was.length) return site.fullPrice && new Set(now).size === 1 ? 0 : null;
       const rrp = Math.max(...was);
       const cur = Math.min(...now);
       if (!(cur < rrp)) return null;
@@ -215,10 +234,17 @@
     host.className = 'mi-badge-host';
     host.style.cssText = 'all:initial;display:inline-block;vertical-align:middle;margin:0 0 0 6px;position:relative;z-index:2;line-height:0;';
     const root = host.attachShadow({ mode: 'open' });
-    const [, label, bg, fg] = band(brand.composite);
-    const verdict = discount == null ? '' : discount >= brand.buyAt ? '<span class="verdict buy">✓ Buy</span>' : '<span class="verdict wait">Wait</span>';
-    root.innerHTML = `<style>${BADGE_CSS}</style><button type="button" class="${brand.provisional ? 'prov' : ''}" aria-label="Menswear Index: ${esc(brand.name)} scores ${brand.composite.toFixed(1)}, ${label}">
-      <span class="score" style="background:${bg};color:${fg}">${brand.composite.toFixed(1)}</span><span class="tier">${TIERS[brand.tier][1]}</span>${verdict}</button>`;
+    // with a known RRP the tile shows the deal score and a verdict; without one, the index score alone
+    const deal = dealScore(brand, discount);
+    const shown = deal ?? brand.composite;
+    const [, label, bg, fg] = band(shown);
+    const verdict = deal == null ? '' : discount >= brand.buyAt ? '<span class="verdict buy">✓ Buy</span>' : '<span class="verdict wait">Wait</span>';
+    const aria =
+      deal == null
+        ? `${esc(brand.name)} scores ${fmt(shown)}, ${label}`
+        : `deal score ${fmt(deal)} for ${esc(brand.name)} at ${discount}% off; index score ${brand.composite.toFixed(1)}`;
+    root.innerHTML = `<style>${BADGE_CSS}</style><button type="button" class="${brand.provisional ? 'prov' : ''}" aria-label="Menswear Index: ${aria}">
+      <span class="score" style="background:${bg};color:${fg}">${fmt(shown)}</span><span class="tier">${TIERS[brand.tier][1]}</span>${verdict}</button>`;
     const btn = root.querySelector('button');
     const show = () => tooltip.show(btn, brand, discount);
     btn.addEventListener('mouseenter', show);
@@ -245,6 +271,7 @@
       .name { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
       .meta { color: #5c5750; font-size: 11px; margin: 0 0 8px; }
       .head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+      .head:has(+ .head) { margin-bottom: 6px; }
       .score { font-size: 15px; font-weight: 600; padding: 3px 6px; font-variant-numeric: tabular-nums; }
       .band { font-size: 11px; color: #5c5750; }
       .dims { display: grid; grid-template-columns: 82px 1fr 22px; gap: 3px 8px; align-items: center; font-size: 11px; }
@@ -269,19 +296,22 @@
       clearTimeout(hideTimer);
       const [, label, bg, fg] = band(b.composite);
       const [tierName, tierSym] = TIERS[b.tier];
+      const ds = dealScore(b, discount);
       const dims = Object.keys(DIM_LABELS)
         .map((d) => `<span>${DIM_LABELS[d]}</span><span class="bar"><i style="width:${b.scores[d]}%"></i></span><span class="num">${b.scores[d]}</span>`)
         .join('');
+      const off = discount >= b.buyAt ? `<span class="ok">✓ ${discount}% off</span>` : `<span class="no">${discount}% off</span>`;
+      const gap = ds >= 100 ? 'capped at 100' : `${Math.abs(ds - b.composite).toFixed(1)} ${ds >= b.composite ? 'above' : 'below'} the index score`;
       const deal =
         discount == null
-          ? `Buy at <b>${b.buyAt}%</b> off RRP or more.`
-          : discount >= b.buyAt
-            ? `<span class="ok">✓ ${discount}% off</span>: at or past the ${b.buyAt}% buy-at threshold.`
-            : `<span class="no">${discount}% off</span>: below the ${b.buyAt}% buy-at threshold.`;
+          ? `No RRP on this listing, so no deal score. Buy at <b>${b.buyAt}%</b> off RRP or more.`
+          : `${off} against a ${b.buyAt}% buy-at threshold, so the deal score is ${gap}.`;
+      const dealHead =
+        ds == null ? '' : `<div class="head"><span class="score" style="background:${band(ds)[2]};color:${band(ds)[3]}">${fmt(ds)}</span><span class="band">Deal score · ${band(ds)[1]}</span></div>`;
       box.innerHTML = `
         <p class="name">${esc(b.name)}</p>
         <p class="meta">Rank #${b.rank.toLocaleString('en-GB')} of ${total.toLocaleString('en-GB')} · ${tierName} ${tierSym}</p>
-        <div class="head"><span class="score" style="background:${bg};color:${fg}">${b.composite.toFixed(1)}</span><span class="band">${label}</span></div>
+        ${dealHead}<div class="head"><span class="score" style="background:${bg};color:${fg}">${b.composite.toFixed(1)}</span><span class="band">Index score · ${label}</span></div>
         <div class="dims">${dims}</div>
         <div class="buy">${deal}</div>
         ${b.provisional ? '<div class="prov">Provisional: too little public information to assess; scores are placeholders.</div>' : ''}
@@ -342,12 +372,12 @@
     let entry = registry.get(brand.id);
     if (!entry) registry.set(brand.id, (entry = { brand, listings: [] }));
     entry.listings.push({ card, discount });
-    spotlightCard(card, brand);
+    spotlightCard(card, mainScore(brand, discount));
   }
 
   const SPOT = 'data-mi-spot';
-  function spotlightCard(card, brand) {
-    const on = settings.spotlight > 0 && brand.composite >= settings.spotlight;
+  function spotlightCard(card, score) {
+    const on = settings.spotlight > 0 && score >= settings.spotlight;
     if (on && !card.hasAttribute(SPOT)) {
       card.setAttribute(SPOT, card.style.outline || '');
       card.style.outline = '2px solid #173c70';
@@ -378,9 +408,12 @@
         count: live.length,
         buys: discounts.filter((d) => d >= brand.buyAt).length,
         bestDiscount: discounts.length ? Math.max(...discounts) : null,
+        // best deal score among its listings with a known RRP; the brand ranks by this where it has one
+        bestDeal: discounts.length ? dealScore(brand, Math.max(...discounts)) : null,
       });
     }
-    brands.sort((a, b) => b.composite - a.composite || b.count - a.count);
+    const main = (b) => b.bestDeal ?? b.composite;
+    brands.sort((a, b) => main(b) - main(a) || b.composite - a.composite || b.count - a.count);
     return { site: site.name, brands, listings, total };
   }
 
@@ -495,7 +528,7 @@
   function clearAll() {
     document.querySelectorAll('.mi-badge-host').forEach((h) => h.remove());
     document.querySelectorAll(`[${DONE}]`).forEach((e) => e.removeAttribute(DONE));
-    for (const { listings } of registry.values()) for (const { card } of listings) spotlightCard(card, { composite: -1 });
+    for (const { listings } of registry.values()) for (const { card } of listings) spotlightCard(card, -1);
     registry.clear();
   }
 
