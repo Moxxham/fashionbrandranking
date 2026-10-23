@@ -9,7 +9,7 @@ const DATA_KEY = 'mi-data';
 const STATUS_KEY = 'mi-status';
 const SETTINGS_KEY = 'mi-settings';
 const ALARM = 'mi-daily-sync';
-const DEFAULTS = { endpoint: 'https://menswear-index.pages.dev', enabled: true, showProvisional: false, sites: {} };
+const DEFAULTS = { endpoint: 'https://menswear-index.pages.dev', enabled: true, showProvisional: false, sites: {}, spotlight: 0 };
 
 const valid = (d) => d && d.v === 1 && Array.isArray(d.brands) && d.brands.length > 100 && Array.isArray(d.brands[0]) && Array.isArray(d.dimensions);
 

@@ -6,6 +6,14 @@ Shows each brand's Menswear Index score, tier and a breakdown next to its name o
 - **Tooltip (hover or focus):** rank, band, tier, all eight dimension scores, and the discount against the threshold.
 - **Click:** opens the brand's dossier on the site in a new tab, without following the product link.
 
+## Best brands on a page
+
+Open the popup on any supported listings page:
+
+- **On this page** ranks every recognised brand on the page, best first. Each row shows its score, rank, tier, how many listings it has here, and how many of those are a ✓ Buy. The list refreshes while the popup is open, so brands loaded by infinite scroll appear too.
+- **Click a brand** to scroll to its listings and flash them.
+- **Spotlight** (Off / 70+ / 75+ / 80+) outlines every listing from a brand at or above that score, on this page and as more load. It's a setting, so it stays on across pages and sites. It outlines the good listings rather than dimming the rest, because an unrecognised brand isn't necessarily a bad one.
+
 ## Build and install
 
 ```bash

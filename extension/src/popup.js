@@ -1,7 +1,7 @@
 const api = globalThis.browser ?? globalThis.chrome;
 const SETTINGS_KEY = 'mi-settings';
 const STATUS_KEY = 'mi-status';
-const DEFAULTS = { endpoint: 'https://menswear-index.pages.dev', enabled: true, showProvisional: false, sites: {} };
+const DEFAULTS = { endpoint: 'https://menswear-index.pages.dev', enabled: true, showProvisional: false, sites: {}, spotlight: 0 };
 const SITES = [
   ['vinted', 'Vinted'],
   ['ssense', 'SSENSE'],
@@ -40,8 +40,113 @@ async function renderStatus() {
   if (err) $('error').textContent = `Last sync failed: ${st.lastError}`;
 }
 
+/* ---------- on this page ---------- */
+const BANDS = [
+  [80, '#173c70', '#fff'],
+  [75, '#3963a1', '#fff'],
+  [70, '#b5cde7', '#161514'],
+  [65, '#dcd9d3', '#161514'],
+  [60, '#e7c0bc', '#161514'],
+  [55, '#a74541', '#fff'],
+  [0, '#722426', '#fff'],
+];
+const TIER_SYMBOL = { atelier: '$$$$$', luxury: '$$$$', premium: '$$$', accessible: '$$', mainstream: '$' };
+const SPOTLIGHT = [
+  [0, 'Off'],
+  [70, '70+'],
+  [75, '75+'],
+  [80, '80+'],
+];
+let tabId = null;
+
+async function renderPage() {
+  const empty = $('page-empty');
+  const list = $('page-list');
+  let page = null;
+  if (tabId != null) {
+    try {
+      page = await api.tabs.sendMessage(tabId, { type: 'mi-page' });
+    } catch {
+      page = null; // no content script here (unsupported site, or the page predates the extension)
+    }
+  }
+  if (!page) {
+    list.hidden = true;
+    $('page-count').textContent = '';
+    empty.hidden = false;
+    empty.textContent = 'Open a listings page on Vinted, SSENSE, Grailed, Farfetch, Yoox or eBay. If one is already open, reload it.';
+    return;
+  }
+  const n = page.brands.length;
+  $('page-count').textContent = n ? `${n} brand${n === 1 ? '' : 's'} · ${page.listings} listing${page.listings === 1 ? '' : 's'}` : '';
+  if (!n) {
+    list.hidden = true;
+    empty.hidden = false;
+    empty.textContent = `No ranked brands found on this ${page.site} page yet. Scroll to load more listings.`;
+    return;
+  }
+  empty.hidden = true;
+  list.hidden = false;
+  const scroll = list.scrollTop;
+  list.replaceChildren(
+    ...page.brands.map((b) => {
+      const [, bg, fg] = BANDS.find((x) => b.composite >= x[0]);
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.title = `Jump to ${b.name} on the page`;
+      const score = document.createElement('span');
+      score.className = 'score';
+      score.style.background = bg;
+      score.style.color = fg;
+      score.textContent = b.composite.toFixed(1);
+      const mid = document.createElement('span');
+      mid.style.minWidth = '0';
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = b.name;
+      const sub = document.createElement('div');
+      sub.className = 'sub';
+      sub.textContent = `#${b.rank.toLocaleString('en-GB')} · ${TIER_SYMBOL[b.tier]} · ${b.count} listing${b.count === 1 ? '' : 's'}${b.provisional ? ' · provisional' : ''}`;
+      mid.append(name, sub);
+      const right = document.createElement('span');
+      right.className = 'buy';
+      right.textContent = b.buys ? `✓ ${b.buys} buy${b.buys === 1 ? '' : 's'}` : '';
+      if (b.bestDiscount != null) right.title = `Best discount here: ${b.bestDiscount}% (buy at ${b.buyAt}%+)`;
+      btn.append(score, mid, right);
+      btn.addEventListener('click', () => api.tabs.sendMessage(tabId, { type: 'mi-reveal', id: b.id }).catch(() => {}));
+      li.append(btn);
+      return li;
+    }),
+  );
+  list.scrollTop = scroll;
+}
+
+function renderSpotlight(current) {
+  $('spotlight').replaceChildren(
+    ...SPOTLIGHT.map(([v, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.setAttribute('aria-pressed', String(current === v));
+      b.addEventListener('click', async () => {
+        await patch({ spotlight: v });
+        renderSpotlight(v);
+        setTimeout(renderPage, 400); // the page rescans when settings change
+      });
+      return b;
+    }),
+  );
+}
+
 async function init() {
   const s = await getSettings();
+  const [tab] = await api.tabs.query({ active: true, currentWindow: true });
+  tabId = tab?.id ?? null;
+  renderSpotlight(s.spotlight || 0);
+  renderPage();
+  // keep the list current while the popup is open (infinite scroll keeps adding listings)
+  setInterval(renderPage, 2000);
   $('enabled').checked = s.enabled;
   $('provisional').checked = s.showProvisional;
   $('endpoint').value = s.endpoint;

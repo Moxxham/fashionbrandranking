@@ -99,7 +99,7 @@
   );
 
   let index = new Map(); // folded name/alias -> brand
-  let settings = { enabled: true, showProvisional: false, sites: {}, endpoint: DEFAULT_SITE };
+  let settings = { enabled: true, showProvisional: false, sites: {}, endpoint: DEFAULT_SITE, spotlight: 0 };
   let total = 0;
   let maxKeyWords = 1;
 
@@ -326,8 +326,91 @@
     anchor.setAttribute(DONE, '1');
     const card = containerOf(anchor);
     if (card && card !== document.body && hasBadge(card)) return;
-    anchor.insertAdjacentElement('afterend', makeBadge(brand, readDiscount(anchor)));
+    const discount = readDiscount(anchor);
+    anchor.insertAdjacentElement('afterend', makeBadge(brand, discount));
+    register(brand, card && card !== document.body ? card : anchor, discount);
   }
+
+  /* ------------------------------------------------------------------ */
+  /* Page summary & spotlight                                            */
+  /* ------------------------------------------------------------------ */
+
+  /** Every badged listing on the page, by brand: brand id -> { brand, listings: [{ card, discount }] }. */
+  const registry = new Map();
+
+  function register(brand, card, discount) {
+    let entry = registry.get(brand.id);
+    if (!entry) registry.set(brand.id, (entry = { brand, listings: [] }));
+    entry.listings.push({ card, discount });
+    spotlightCard(card, brand);
+  }
+
+  const SPOT = 'data-mi-spot';
+  function spotlightCard(card, brand) {
+    const on = settings.spotlight > 0 && brand.composite >= settings.spotlight;
+    if (on && !card.hasAttribute(SPOT)) {
+      card.setAttribute(SPOT, card.style.outline || '');
+      card.style.outline = '2px solid #173c70';
+      card.style.outlineOffset = '3px';
+    } else if (!on && card.hasAttribute(SPOT)) {
+      card.style.outline = card.getAttribute(SPOT);
+      card.style.outlineOffset = '';
+      card.removeAttribute(SPOT);
+    }
+  }
+
+  function summary() {
+    const brands = [];
+    let listings = 0;
+    for (const { brand, listings: all } of registry.values()) {
+      const live = all.filter((l) => l.card.isConnected);
+      if (!live.length) continue;
+      listings += live.length;
+      const discounts = live.map((l) => l.discount).filter((d) => d != null);
+      brands.push({
+        id: brand.id,
+        name: brand.name,
+        composite: brand.composite,
+        rank: brand.rank,
+        tier: brand.tier,
+        buyAt: brand.buyAt,
+        provisional: brand.provisional,
+        count: live.length,
+        buys: discounts.filter((d) => d >= brand.buyAt).length,
+        bestDiscount: discounts.length ? Math.max(...discounts) : null,
+      });
+    }
+    brands.sort((a, b) => b.composite - a.composite || b.count - a.count);
+    return { site: site.name, brands, listings, total };
+  }
+
+  /** Scroll to a brand's first listing on screen order and flash all of its listings. */
+  function reveal(id) {
+    const entry = registry.get(id);
+    const cards = entry?.listings.map((l) => l.card).filter((c) => c.isConnected) ?? [];
+    if (!cards.length) return false;
+    cards.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    const first = cards.find((c) => c.getBoundingClientRect().top >= 0) || cards[0];
+    first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    for (const c of cards) {
+      c.animate(
+        [
+          { boxShadow: '0 0 0 0 rgba(23,60,112,0)' },
+          { boxShadow: '0 0 0 6px rgba(23,60,112,.55)', offset: 0.25 },
+          { boxShadow: '0 0 0 0 rgba(23,60,112,0)' },
+        ],
+        { duration: 1600, easing: 'ease-out' },
+      );
+    }
+    return true;
+  }
+
+  api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'mi-page') sendResponse(summary());
+    else if (msg?.type === 'mi-reveal') sendResponse(reveal(msg.id));
+    else return false;
+    return false;
+  });
 
   function brandFromStructuredData(card) {
     for (const s of card.querySelectorAll('script[type="application/ld+json"]')) {
@@ -412,6 +495,8 @@
   function clearAll() {
     document.querySelectorAll('.mi-badge-host').forEach((h) => h.remove());
     document.querySelectorAll(`[${DONE}]`).forEach((e) => e.removeAttribute(DONE));
+    for (const { listings } of registry.values()) for (const { card } of listings) spotlightCard(card, { composite: -1 });
+    registry.clear();
   }
 
   // infinite scroll and client-side navigation: rescan added subtrees, batched
