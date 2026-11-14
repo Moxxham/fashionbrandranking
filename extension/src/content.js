@@ -4,7 +4,8 @@
  * the brand's index score, tier and a breakdown tooltip. Where the page shows
  * both an RRP and a sale price, the badge shows a deal score instead: the
  * index score adjusted for the discount against the brand's buy-at threshold. Badges render in shadow DOM so site CSS can't reach them;
- * a MutationObserver picks up cards added by infinite scroll.
+ * a MutationObserver picks up cards added by infinite scroll. From the popup, listings scoring
+ * below a chosen level can be hidden until the page reloads.
  */
 (() => {
   'use strict';
@@ -77,9 +78,11 @@
    * title: listing-title elements whose text starts with the brand (eBay).
    * fullPrice: the site sells new at retail, so a lone unstruck price is the RRP (0% off).
    *        Only where verified on real markup; resale sites never qualify.
+   * item:  the grid cell around each listing, hidden whole by the score filter so the grid closes
+   *        up. Only where verified on real markup; elsewhere the filter hides the card itself.
    */
   const SITES = [
-    { id: 'vinted', name: 'Vinted', host: /(^|\.)vinted\.[a-z.]+$/, label: '[data-testid$="--description-title"]', card: null, title: null },
+    { id: 'vinted', name: 'Vinted', host: /(^|\.)vinted\.[a-z.]+$/, label: '[data-testid$="--description-title"]', card: null, title: null, item: '[data-testid="grid-item"]' },
     { id: 'ssense', name: 'SSENSE', host: /(^|\.)ssense\.com$/, label: '', card: 'a[href*="/product/"]', title: null, fullPrice: true },
     { id: 'grailed', name: 'Grailed', host: /(^|\.)grailed\.com$/, label: '[class*="designer" i]', card: 'a[href*="/listings/"]', title: null },
     { id: 'farfetch', name: 'Farfetch', host: /(^|\.)farfetch\.com$/, label: '[data-component="ProductCardBrandName"],[data-component="ProductBrand"]', card: 'a[href*="/shopping/"]', title: null },
@@ -420,13 +423,62 @@
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Score filter                                                        */
+  /* ------------------------------------------------------------------ */
+
+  // Hides listings scoring below filter.min (and, where the site marks out each listing, listings of
+  // brands not in the index). It lives in this page's memory only: reloading or closing the tab clears it.
+  const filter = { min: 0, unrated: false };
+  let filteredOut = 0;
+  const HIDE = 'data-mi-hide';
+  let hideStyle = null;
+
+  const scanning = () => index.size > 0 && settings.enabled && settings.sites?.[site.id] !== false;
+
+  /** The element to hide for a listing: its grid cell where known, else the card and any wrappers it fills alone. */
+  function tileOf(card) {
+    const cell = site.item && card.closest(site.item);
+    if (cell) return cell;
+    let t = card;
+    for (let d = 0; d < 4 && t.parentElement && t.parentElement !== document.body && t.parentElement.childElementCount === 1; d++) t = t.parentElement;
+    return t;
+  }
+
+  function applyFilter() {
+    if (!hideStyle?.isConnected) {
+      hideStyle = document.createElement('style');
+      hideStyle.textContent = `[${HIDE}]{display:none!important}`;
+      (document.head || document.documentElement).appendChild(hideStyle);
+    }
+    const hide = new Set();
+    if (scanning()) {
+      if (filter.min > 0)
+        for (const { brand, listings } of registry.values())
+          for (const l of listings) if (l.card.isConnected && mainScore(brand, l.discount) < filter.min) hide.add(tileOf(l.card));
+      // a listing the page labels with a brand that isn't in the index
+      if (filter.unrated && site.item && site.label)
+        for (const cell of document.querySelectorAll(site.item)) if (!hasBadge(cell) && cell.querySelector(site.label)) hide.add(cell);
+    }
+    for (const el of document.querySelectorAll(`[${HIDE}]`)) if (!hide.has(el)) el.removeAttribute(HIDE);
+    for (const el of hide) if (!el.hasAttribute(HIDE)) el.setAttribute(HIDE, '');
+    filteredOut = hide.size;
+  }
+
+  /** Whether a listing is still on screen: not removed, and not hidden by this filter, the site, or another extension. */
+  const visible = (card) =>
+    card.isConnected && (typeof card.checkVisibility === 'function' ? card.checkVisibility({ visibilityProperty: true }) : card.getClientRects().length > 0);
+
   function summary() {
     const brands = [];
     let listings = 0;
+    let shownListings = 0;
     for (const { brand, listings: all } of registry.values()) {
       const live = all.filter((l) => l.card.isConnected);
       if (!live.length) continue;
       listings += live.length;
+      const shown = live.filter((l) => visible(l.card)).length;
+      shownListings += shown;
       const discounts = live.map((l) => l.discount).filter((d) => d != null);
       brands.push({
         id: brand.id,
@@ -437,6 +489,7 @@
         buyAt: brand.buyAt,
         provisional: brand.provisional,
         count: live.length,
+        shown,
         buys: discounts.filter((d) => d >= brand.buyAt).length,
         bestDiscount: discounts.length ? Math.max(...discounts) : null,
         // best deal score among its listings with a known RRP; the brand ranks by this where it has one
@@ -444,14 +497,15 @@
       });
     }
     const main = (b) => b.bestDeal ?? b.composite;
-    brands.sort((a, b) => main(b) - main(a) || b.composite - a.composite || b.count - a.count);
-    return { site: site.name, brands, listings, total };
+    // brands still on screen first, then those whose listings are all hidden
+    brands.sort((a, b) => (b.shown > 0) - (a.shown > 0) || main(b) - main(a) || b.composite - a.composite || b.count - a.count);
+    return { site: site.name, brands, listings, shownListings, total, filter: { ...filter }, filteredOut, unratedFilter: !!(site.item && site.label) };
   }
 
-  /** Scroll to a brand's first listing on screen order and flash all of its listings. */
+  /** Scroll to a brand's first listing in screen order and flash all of its listings still on screen. */
   function reveal(id) {
     const entry = registry.get(id);
-    const cards = entry?.listings.map((l) => l.card).filter((c) => c.isConnected) ?? [];
+    const cards = entry?.listings.map((l) => l.card).filter(visible) ?? [];
     if (!cards.length) return false;
     cards.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
     const first = cards.find((c) => c.getBoundingClientRect().top >= 0) || cards[0];
@@ -472,6 +526,12 @@
   api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'mi-page') sendResponse(summary());
     else if (msg?.type === 'mi-reveal') sendResponse(reveal(msg.id));
+    else if (msg?.type === 'mi-filter') {
+      filter.min = Math.max(0, Math.min(100, Number(msg.min) || 0));
+      filter.unrated = !!msg.unrated;
+      applyFilter();
+      sendResponse(summary());
+    }
     else return false;
     return false;
   });
@@ -574,6 +634,7 @@
         const roots = [...pending].filter((n) => n.isConnected);
         pending = new Set();
         roots.forEach((r) => scan(r));
+        applyFilter();
       }, 250);
   });
 
@@ -592,6 +653,7 @@
     await load();
     clearAll();
     scan();
+    applyFilter();
   });
 
   // Wait for the page to finish loading and go idle before touching it: React/Next.js
@@ -606,6 +668,7 @@
 
   Promise.all([load(), afterHydration()]).then(() => {
     scan();
+    applyFilter();
     observer.observe(document.body, { childList: true, subtree: true });
   });
 })();

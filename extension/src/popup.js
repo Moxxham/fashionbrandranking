@@ -58,18 +58,19 @@ const SPOTLIGHT = [
   [80, '80+'],
 ];
 let tabId = null;
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-async function renderPage() {
+async function renderPage(page) {
   const empty = $('page-empty');
   const list = $('page-list');
-  let page = null;
-  if (tabId != null) {
+  if (page === undefined && tabId != null) {
     try {
       page = await api.tabs.sendMessage(tabId, { type: 'mi-page' });
     } catch {
       page = null; // no content script here (unsupported site, or the page predates the extension)
     }
   }
+  renderFilter(page);
   if (!page) {
     list.hidden = true;
     $('page-count').textContent = '';
@@ -78,7 +79,12 @@ async function renderPage() {
     return;
   }
   const n = page.brands.length;
-  $('page-count').textContent = n ? `${n} brand${n === 1 ? '' : 's'} · ${page.listings} listing${page.listings === 1 ? '' : 's'}` : '';
+  const shownBrands = page.brands.filter((b) => b.shown > 0).length;
+  $('page-count').textContent = !n
+    ? ''
+    : page.shownListings === page.listings
+      ? `${plural(n, 'brand')} · ${plural(page.listings, 'listing')}`
+      : `${shownBrands} of ${plural(n, 'brand')} · ${page.shownListings} of ${plural(page.listings, 'listing')} showing`;
   if (!n) {
     list.hidden = true;
     empty.hidden = false;
@@ -94,9 +100,17 @@ async function renderPage() {
       const main = b.bestDeal ?? b.composite;
       const [, bg, fg] = BANDS.find((x) => main >= x[0]);
       const li = document.createElement('li');
+      const gone = b.shown === 0;
+      li.className = gone ? 'gone' : '';
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.title = `Jump to ${b.name} on the page`;
+      btn.title = gone ? `No ${b.name} listings showing: all hidden by a filter` : `Jump to ${b.name} on the page`;
+      if (gone) btn.setAttribute('aria-disabled', 'true');
+      // whether the brand still has a tile on screen
+      const vis = document.createElement('span');
+      vis.className = `vis ${gone ? 'off' : 'on'}`;
+      vis.textContent = gone ? '' : '✓';
+      vis.setAttribute('aria-label', gone ? 'Not showing' : 'Showing');
       const score = document.createElement('span');
       score.className = 'score';
       score.style.background = bg;
@@ -110,19 +124,53 @@ async function renderPage() {
       name.textContent = b.name;
       const sub = document.createElement('div');
       sub.className = 'sub';
-      sub.textContent = `${b.bestDeal != null ? `Deal · index ${b.composite.toFixed(1)} · ` : ''}#${b.rank.toLocaleString('en-GB')} · ${TIER_SYMBOL[b.tier]} · ${b.count} listing${b.count === 1 ? '' : 's'}${b.provisional ? ' · provisional' : ''}`;
+      sub.textContent = `${b.bestDeal != null ? `Deal · index ${b.composite.toFixed(1)} · ` : ''}#${b.rank.toLocaleString('en-GB')} · ${TIER_SYMBOL[b.tier]} · ${b.shown === b.count ? plural(b.count, 'listing') : gone ? `${plural(b.count, 'listing')}, all hidden` : `${b.shown} of ${b.count} showing`}${b.provisional ? ' · provisional' : ''}`;
       mid.append(name, sub);
       const right = document.createElement('span');
       right.className = 'buy';
       right.textContent = b.buys ? `✓ ${b.buys} buy${b.buys === 1 ? '' : 's'}` : '';
       if (b.bestDiscount != null) right.title = `Best discount here: ${b.bestDiscount}% (buy at ${b.buyAt}%+)`;
-      btn.append(score, mid, right);
-      btn.addEventListener('click', () => api.tabs.sendMessage(tabId, { type: 'mi-reveal', id: b.id }).catch(() => {}));
+      btn.append(vis, score, mid, right);
+      btn.addEventListener('click', () => !gone && api.tabs.sendMessage(tabId, { type: 'mi-reveal', id: b.id }).catch(() => {}));
       li.append(btn);
       return li;
     }),
   );
   list.scrollTop = scroll;
+}
+
+/* ---------- score filter (lives in the page, so it resets when the page reloads) ---------- */
+const FILTER_OFF = 40; // the slider's lowest stop means no filter
+let filterSynced = false;
+const sliderMin = () => Number($('filter-min').value);
+
+function renderFilter(page) {
+  $('filter').hidden = !page;
+  if (!page) return;
+  // take the page's current filter once, so the 2-second refresh doesn't fight the slider
+  if (!filterSynced) {
+    filterSynced = true;
+    $('filter-min').value = String(page.filter.min > FILTER_OFF ? page.filter.min : FILTER_OFF);
+    $('filter-unrated').checked = page.filter.unrated;
+  }
+  $('filter-unrated-row').hidden = !page.unratedFilter;
+  const min = sliderMin();
+  $('filter-value').textContent = min > FILTER_OFF ? `${min}` : 'Off';
+  const on = min > FILTER_OFF || (page.unratedFilter && $('filter-unrated').checked);
+  $('filter-note').textContent = on
+    ? `${plural(page.filteredOut, 'listing')} hidden. For this page only: reloading or closing the tab shows everything again.`
+    : 'For this page only: reloading or closing the tab shows everything again.';
+}
+
+async function sendFilter() {
+  const min = sliderMin();
+  $('filter-value').textContent = min > FILTER_OFF ? `${min}` : 'Off';
+  try {
+    const page = await api.tabs.sendMessage(tabId, { type: 'mi-filter', min: min > FILTER_OFF ? min : 0, unrated: $('filter-unrated').checked });
+    renderPage(page);
+  } catch {
+    /* the page went away */
+  }
 }
 
 function renderSpotlight(current) {
@@ -147,9 +195,11 @@ async function init() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   tabId = tab?.id ?? null;
   renderSpotlight(s.spotlight || 0);
+  $('filter-min').addEventListener('input', sendFilter);
+  $('filter-unrated').addEventListener('change', sendFilter);
   renderPage();
   // keep the list current while the popup is open (infinite scroll keeps adding listings)
-  setInterval(renderPage, 2000);
+  setInterval(() => renderPage(), 2000);
   $('enabled').checked = s.enabled;
   $('provisional').checked = s.showProvisional;
   $('endpoint').value = s.endpoint;

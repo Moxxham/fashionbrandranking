@@ -25,12 +25,22 @@
       .hint { margin-top: 4px; font-size: 11.5px; color: #5c5750; }
       /* on this page */
       #page-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 300px; overflow-y: auto; border-top: 1px solid #dcd7cd; }
-      #page-list li button { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: center; width: 100%; padding: 6px 2px; border-bottom: 1px solid #e7e3da; cursor: pointer; }
+      #page-list li button { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 16px 44px 1fr auto; gap: 8px; align-items: center; width: 100%; padding: 6px 2px; border-bottom: 1px solid #e7e3da; cursor: pointer; }
       #page-list li button:hover, #page-list li button:focus-visible { background: #fbfaf7; }
       .score { display: inline-flex; justify-content: center; padding: 2px 0; font-weight: 600; font-variant-numeric: tabular-nums; font-size: 12px; }
       .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .sub { font-size: 11px; color: #5c5750; }
       .buy { font-size: 11px; font-weight: 600; color: #173c70; white-space: nowrap; }
+      .vis { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; font-size: 10px; font-weight: 700; line-height: 1; }
+      .vis.on { background: #173c70; color: #fff; }
+      .vis.off { border: 1px solid #b3ada1; color: #8a8478; box-sizing: border-box; }
+      #page-list li.gone button { opacity: 0.5; cursor: default; }
+      #page-list li.gone button:hover { background: transparent; }
+      .filter { margin-top: 10px; padding: 8px 10px; background: #fbfaf7; border: 1px solid #dcd7cd; }
+      .filter .head { align-items: center; }
+      .filter input[type='range'] { width: 100%; margin: 6px 0 2px; accent-color: #161514; }
+      #filter-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+      .filter label { font-size: 12px; padding: 2px 0 0; }
       .seg { display: inline-flex; border: 1px solid #dcd7cd; background: #fbfaf7; }
       .seg button { all: unset; padding: 3px 8px; font-size: 12px; cursor: pointer; color: #3a3834; }
       .seg button[aria-pressed='true'] { background: #161514; color: #f4f2ed; }
@@ -50,11 +60,20 @@
       </div>
       <div class="muted" id="page-empty">Loading…</div>
       <ol id="page-list" hidden></ol>
+      <div class="filter" id="filter" hidden>
+        <div class="head">
+          <span class="muted">Hide listings scoring below</span>
+          <span id="filter-value">Off</span>
+        </div>
+        <input type="range" id="filter-min" min="40" max="85" step="1" value="40" aria-label="Hide listings scoring below" />
+        <label id="filter-unrated-row" hidden><input type="checkbox" id="filter-unrated" /> Also hide brands not in the index</label>
+        <div class="hint" id="filter-note">For this page only: reloading or closing the tab shows everything again.</div>
+      </div>
       <div class="head" style="margin-top: 10px">
         <span class="muted">Spotlight listings scoring</span>
         <div class="seg" role="group" aria-label="Spotlight" id="spotlight"></div>
       </div>
-      <div class="hint">Brands rank by their best deal score where a listing shows its RRP, otherwise by index score. Spotlight outlines listings at or above the score, here and as more load. Click a brand to jump to its listings.</div>
+      <div class="hint">Brands rank by their best deal score where a listing shows its RRP, otherwise by index score. Spotlight outlines listings at or above the score, here and as more load. A filled tick means the brand still has a listing showing; brands whose listings are all hidden (by the filter, or by the site's own filters) are greyed out. Click a brand to jump to its listings.</div>
     </section>
 
     <section>

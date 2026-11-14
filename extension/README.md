@@ -11,7 +11,9 @@ Shows each brand's Menswear Index score, tier and a breakdown next to its name o
 Open the popup on any supported listings page:
 
 - **On this page** ranks every recognised brand on the page, best first: by its best deal score where one of its listings shows an RRP, otherwise by index score. Each row shows that score, rank, tier, how many listings it has here, and how many of those are a ✓ Buy. The list refreshes while the popup is open, so brands loaded by infinite scroll appear too.
-- **Click a brand** to scroll to its listings and flash them.
+- **Showing tick.** Each brand has a filled ✓ while at least one of its listings is still on screen. When all of them are hidden, whether by the score filter, the site's own filters or another extension, the row is greyed out with a hollow circle and moves to the bottom. A brand that's only partly hidden reads "2 of 6 showing". The header counts what's showing too.
+- **Click a brand** to scroll to its listings that are still showing, and flash them.
+- **Hide listings scoring below** is a slider from Off to 85. It hides every listing whose score (deal score if it has one, otherwise index score) is below the level, including listings that load as you scroll. On Vinted it hides the whole grid cell, so the grid closes up, and you can also tick **Also hide brands not in the index**. The filter is kept only in the page's memory: reloading the page or closing the tab shows everything again.
 - **Spotlight** (Off / 70+ / 75+ / 80+) outlines every listing whose score (deal score if it has one, otherwise index score) is at or above that level, on this page and as more load. It's a setting, so it stays on across pages and sites. It outlines the good listings rather than dimming the rest, because an unrecognised brand isn't necessarily a bad one.
 
 ## Build and install
