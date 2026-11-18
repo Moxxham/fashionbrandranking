@@ -71,6 +71,8 @@ async function renderPage(page) {
     }
   }
   renderFilter(page);
+  pageState = page;
+  renderAgg();
   if (!page) {
     list.hidden = true;
     $('page-count').textContent = '';
@@ -152,6 +154,7 @@ function renderFilter(page) {
     filterSynced = true;
     $('filter-min').value = String(page.filter.min > FILTER_OFF ? page.filter.min : FILTER_OFF);
     $('filter-unrated').checked = page.filter.unrated;
+    $('filter-sort').checked = !!page.filter.sort;
   }
   $('filter-unrated-row').hidden = !page.unratedFilter;
   const min = sliderMin();
@@ -166,10 +169,71 @@ async function sendFilter() {
   const min = sliderMin();
   $('filter-value').textContent = min > FILTER_OFF ? `${min}` : 'Off';
   try {
-    const page = await api.tabs.sendMessage(tabId, { type: 'mi-filter', min: min > FILTER_OFF ? min : 0, unrated: $('filter-unrated').checked });
+    const page = await api.tabs.sendMessage(tabId, {
+      type: 'mi-filter',
+      min: min > FILTER_OFF ? min : 0,
+      unrated: $('filter-unrated').checked,
+      sort: $('filter-sort').checked,
+    });
     renderPage(page);
   } catch {
     /* the page went away */
+  }
+}
+
+/* ---------- scan several pages (Vinted) ---------- */
+const AGG_KEY = 'mi-agg';
+let pageState = null;
+let lastAgg = null; // a summary of the latest scan, without its listings
+const resultsUrl = () => api.runtime.getURL('results.html');
+// a run whose tab stopped reporting (closed, or navigated away) counts as interrupted
+const aggLive = (a) => a?.status === 'running' && Date.now() - a.updatedAt < 90000;
+
+function takeAgg(a) {
+  lastAgg = a ? { ...a, count: a.items?.length ?? 0, items: undefined } : null;
+}
+
+function renderAgg() {
+  const supported = !!pageState?.aggregate?.supported;
+  $('agg').hidden = !supported && !lastAgg;
+  const running = aggLive(lastAgg);
+  $('agg-controls').hidden = !supported || running;
+  $('agg-stop').hidden = !running;
+  $('agg-open').hidden = !lastAgg;
+  $('agg-count').textContent = lastAgg ? plural(lastAgg.count, 'listing') : '';
+  if (!lastAgg) {
+    $('agg-status').textContent = '';
+    return;
+  }
+  const how = lastAgg.method === 'api' ? 'reading in the background' : lastAgg.method === 'pages' ? 'clicking through the page buttons' : 'starting';
+  const of = lastAgg.totalPages ? Math.min(lastAgg.maxPages, lastAgg.totalPages - lastAgg.startPage + 1) : lastAgg.maxPages;
+  $('agg-status').textContent = running
+    ? `Scanning page ${Math.min(lastAgg.pagesDone + 1, of)} of ${of}, ${how}…`
+    : `Last scan: “${lastAgg.query}”, ${plural(lastAgg.pagesDone, 'page')}${lastAgg.status === 'stopped' ? ', stopped' : lastAgg.status === 'running' ? ', interrupted' : ''} · ${ago(lastAgg.updatedAt)}`;
+  $('agg-error').hidden = !lastAgg.error;
+  $('agg-error').textContent = lastAgg.error || '';
+}
+
+async function startAgg() {
+  const btn = $('agg-start');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+  try {
+    const st = await api.tabs.sendMessage(tabId, {
+      type: 'mi-agg-start',
+      pages: Number($('agg-pages').value),
+      tabId,
+      method: $('agg-buttons').checked ? 'pages' : 'auto',
+    });
+    if (st?.error) throw new Error(st.error);
+    // a background read doesn't need this tab, so show the results; clicking through pages needs this tab, so open them behind it
+    await api.tabs.create({ url: resultsUrl(), active: st?.method === 'api' });
+  } catch (e) {
+    $('agg-error').hidden = false;
+    $('agg-error').textContent = e?.message?.includes('Receiving end') ? 'Reload the Vinted page, then try again.' : String(e?.message || e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Scan';
   }
 }
 
@@ -197,6 +261,19 @@ async function init() {
   renderSpotlight(s.spotlight || 0);
   $('filter-min').addEventListener('input', sendFilter);
   $('filter-unrated').addEventListener('change', sendFilter);
+  $('filter-sort').addEventListener('change', sendFilter);
+  takeAgg((await api.storage.local.get(AGG_KEY))[AGG_KEY]);
+  $('agg-start').addEventListener('click', startAgg);
+  $('agg-open').addEventListener('click', () => api.tabs.create({ url: resultsUrl() }));
+  $('agg-stop').addEventListener('click', () => {
+    api.tabs.sendMessage(lastAgg?.tabId ?? tabId, { type: 'mi-agg-stop' }).catch(() => {});
+  });
+  api.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[AGG_KEY]) {
+      takeAgg(changes[AGG_KEY].newValue);
+      renderAgg();
+    }
+  });
   renderPage();
   // keep the list current while the popup is open (infinite scroll keeps adding listings)
   setInterval(() => renderPage(), 2000);

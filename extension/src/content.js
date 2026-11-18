@@ -5,7 +5,9 @@
  * both an RRP and a sale price, the badge shows a deal score instead: the
  * index score adjusted for the discount against the brand's buy-at threshold. Badges render in shadow DOM so site CSS can't reach them;
  * a MutationObserver picks up cards added by infinite scroll. From the popup, listings scoring
- * below a chosen level can be hidden until the page reloads.
+ * below a chosen level can be hidden until the page reloads, and the grid sorted by score.
+ * On Vinted, the aggregate mode collects every listing across several result pages for the
+ * results tab (results.html).
  */
 (() => {
   'use strict';
@@ -429,7 +431,7 @@
 
   // Hides listings scoring below filter.min (and, where the site marks out each listing, listings of
   // brands not in the index). It lives in this page's memory only: reloading or closing the tab clears it.
-  const filter = { min: 0, unrated: false };
+  const filter = { min: 0, unrated: false, sort: false };
   let filteredOut = 0;
   const HIDE = 'data-mi-hide';
   let hideStyle = null;
@@ -463,6 +465,40 @@
     for (const el of document.querySelectorAll(`[${HIDE}]`)) if (!hide.has(el)) el.removeAttribute(HIDE);
     for (const el of hide) if (!el.hasAttribute(HIDE)) el.setAttribute(HIDE, '');
     filteredOut = hide.size;
+    applySort();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Sort this page by score                                             */
+  /* ------------------------------------------------------------------ */
+
+  // Reorders the grid best-first with the CSS `order` property, so the page's own markup is untouched.
+  // Works where the listings sit in a flex or grid container (Vinted); elsewhere it has no effect.
+  const ORDER = 'data-mi-order';
+  function applySort() {
+    const want = new Map();
+    if (filter.sort && scanning()) {
+      for (const { brand, listings } of registry.values())
+        for (const l of listings) {
+          if (!l.card.isConnected) continue;
+          const tile = tileOf(l.card);
+          const v = Math.round((100 - mainScore(brand, l.discount)) * 10);
+          if (!want.has(tile) || want.get(tile) > v) want.set(tile, v);
+        }
+      // everything else in the same grid (unrecognised brands, promotions) goes after the scored listings
+      const grids = new Set([...want.keys()].map((t) => t.parentElement).filter(Boolean));
+      for (const g of grids) for (const child of g.children) if (!want.has(child)) want.set(child, 1001);
+    }
+    for (const el of document.querySelectorAll(`[${ORDER}]`))
+      if (!want.has(el)) {
+        el.style.order = '';
+        el.removeAttribute(ORDER);
+      }
+    for (const [el, v] of want)
+      if (el.getAttribute(ORDER) !== String(v)) {
+        el.style.order = String(v);
+        el.setAttribute(ORDER, String(v));
+      }
   }
 
   /** Whether a listing is still on screen: not removed, and not hidden by this filter, the site, or another extension. */
@@ -499,7 +535,7 @@
     const main = (b) => b.bestDeal ?? b.composite;
     // brands still on screen first, then those whose listings are all hidden
     brands.sort((a, b) => (b.shown > 0) - (a.shown > 0) || main(b) - main(a) || b.composite - a.composite || b.count - a.count);
-    return { site: site.name, brands, listings, shownListings, total, filter: { ...filter }, filteredOut, unratedFilter: !!(site.item && site.label) };
+    return { site: site.name, brands, listings, shownListings, total, filter: { ...filter }, filteredOut, unratedFilter: !!(site.item && site.label), aggregate: aggStatus() };
   }
 
   /** Scroll to a brand's first listing in screen order and flash all of its listings still on screen. */
@@ -523,16 +559,403 @@
     return true;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Aggregate (Vinted)                                                  */
+  /* ------------------------------------------------------------------ */
+
+  // Collects every listing across several result pages into storage for the results tab
+  // (results.html). It first reads Vinted's own catalogue API, which serves the same listings as the
+  // page buttons, 96 at a time, without touching this tab. If that fails or disagrees with the grid on
+  // screen, it steps through the page buttons in this tab instead, picking up again after each page
+  // load (the run is remembered in sessionStorage, which is per tab and survives reloads).
+  const AGG_KEY = 'mi-agg';
+  const RUN_KEY = 'mi-agg-run';
+  const AGG_MAX_PAGES = 50;
+  const AGG_MAX_ITEMS = 6000;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Firefox runs content-script fetch as the extension; content.fetch makes the request as the page, with its cookies
+  const pageFetch = typeof globalThis.content?.fetch === 'function' ? globalThis.content.fetch.bind(globalThis.content) : globalThis.fetch.bind(globalThis);
+  let agg = null;
+  let aggIds = new Set();
+  let aggActive = false;
+
+  const itemIdOf = (href) => (String(href || '').match(/\/items\/(\d+)/) || [])[1] || null;
+  const gridIds = () =>
+    site.item ? [...new Set([...document.querySelectorAll(`${site.item} a[href*="/items/"]`)].map((a) => itemIdOf(a.getAttribute('href'))).filter(Boolean))] : [];
+  const currentPage = () => Math.max(1, parseInt(new URL(location.href).searchParams.get('page'), 10) || 1);
+  const aggSupported = () => site.id === 'vinted' && (/^\/(catalog|brand)(\/|$)/.test(location.pathname) || gridIds().length > 0);
+  const queryLabel = () =>
+    new URL(location.href).searchParams.get('search_text') || document.title.replace(/\s*[|–-]\s*Vinted.*$/i, '').trim() || location.pathname;
+  const CURRENCY_CODES = [
+    [/£/, 'GBP'],
+    [/€/, 'EUR'],
+    [/\$/, 'USD'],
+    [/zł/i, 'PLN'],
+    [/kč/i, 'CZK'],
+    [/\bft\b/i, 'HUF'],
+    [/\blei\b/i, 'RON'],
+  ];
+  const currencyOf = (text) => CURRENCY_CODES.find(([re]) => re.test(text))?.[1] || '';
+
+  function aggStatus() {
+    return {
+      supported: aggSupported(),
+      running: aggActive,
+      method: agg?.method ?? null,
+      pagesDone: agg?.pagesDone ?? 0,
+      maxPages: agg?.maxPages ?? 0,
+      items: agg?.items.length ?? 0,
+    };
+  }
+
+  async function saveAgg() {
+    agg.updatedAt = Date.now();
+    try {
+      await api.storage.local.set({ [AGG_KEY]: agg });
+    } catch (e) {
+      aggActive = false;
+      agg.error = `Couldn't save the results: ${e.message || e}`;
+    }
+  }
+
+  async function aggFinish(status, error) {
+    aggActive = false;
+    try {
+      sessionStorage.removeItem(RUN_KEY);
+    } catch {
+      /* storage blocked */
+    }
+    if (!agg) return;
+    agg.status = status;
+    if (error) agg.error = error;
+    await saveAgg();
+  }
+
+  /** Adds listings not seen yet; returns how many were new. */
+  function ingest(items, page) {
+    let added = 0;
+    for (const it of items) {
+      if (!it.id || aggIds.has(it.id) || agg.items.length >= AGG_MAX_ITEMS) continue;
+      aggIds.add(it.id);
+      const b = it.brandName ? lookup(it.brandName, { allowCommon: true }) : null;
+      agg.items.push({ ...it, brandId: b?.id ?? null, page, order: agg.items.length });
+      added++;
+    }
+    return added;
+  }
+
+  /* --- Vinted's catalogue API --- */
+
+  /** The API query for this catalogue page: its filters, with "catalog[]=1&catalog[]=2" as "catalog_ids=1,2". */
+  function apiQuery() {
+    const u = new URL(location.href);
+    const m = u.pathname.match(/^\/(catalog|brand)(?:\/(\d+))?/);
+    if (!m) return null;
+    const out = new URLSearchParams();
+    const multi = new Map();
+    for (const [k, v] of u.searchParams) {
+      if (['page', 'per_page', 'time', 'search_id', 'catalog_from', 'search_by_image_uuid'].includes(k)) continue;
+      if (!k.endsWith('[]')) {
+        out.set(k, v);
+        continue;
+      }
+      const name = k === 'catalog[]' ? 'catalog_ids' : k.slice(0, -2);
+      if (!multi.has(name)) multi.set(name, []);
+      multi.get(name).push(v);
+    }
+    // the category or brand can be in the path: /catalog/2050-clothing, /brand/53-nike
+    const pathKey = m[1] === 'catalog' ? 'catalog_ids' : 'brand_ids';
+    if (m[2] && !multi.has(pathKey)) multi.set(pathKey, [m[2]]);
+    for (const [k, vs] of multi) out.set(k, vs.join(','));
+    return out;
+  }
+
+  async function apiPage(params, page) {
+    const q = new URLSearchParams(params);
+    q.set('page', String(page));
+    q.set('per_page', '96');
+    const res = await pageFetch(`${location.origin}/api/v2/catalog/items?${q}`, { credentials: 'include', headers: { accept: 'application/json, text/plain, */*' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    if (!Array.isArray(d?.items)) throw new Error('unexpected response');
+    return d;
+  }
+
+  const num = (v) => {
+    const n = parseFloat(v?.amount ?? v);
+    return Number.isFinite(n) ? n : NaN;
+  };
+  function fromApi(it) {
+    const thumb = it.photo?.thumbnails?.find((t) => /310x430|310/.test(t.type || ''))?.url;
+    return {
+      id: String(it.id),
+      url: it.url ? new URL(it.url, location.origin).href : `${location.origin}/items/${it.id}`,
+      title: it.title || '',
+      brandName: it.brand_title || '',
+      size: it.size_title || '',
+      condition: typeof it.status === 'string' ? it.status : '',
+      price: num(it.price),
+      total: num(it.total_item_price),
+      currency: it.price?.currency_code || it.currency || '',
+      photo: thumb || it.photo?.url || '',
+      favourites: Number.isFinite(it.favourite_count) ? it.favourite_count : null,
+      views: Number.isFinite(it.view_count) ? it.view_count : null,
+    };
+  }
+
+  /** The first page from the API, if it works and returns the listings this page shows. */
+  async function apiFirstPage() {
+    const params = apiQuery();
+    if (!params) return null;
+    try {
+      const data = await apiPage(params, agg.startPage);
+      if (!data.items.length) return null;
+      // sanity check: most of the grid on screen should be in the API's page (ordering can differ slightly)
+      const dom = gridIds();
+      if (dom.length >= 10) {
+        const got = new Set(data.items.map((i) => String(i.id)));
+        if (dom.filter((id) => got.has(id)).length / dom.length < 0.25) return null;
+      }
+      return { params, data };
+    } catch {
+      return null;
+    }
+  }
+
+  async function runApi({ params, data }) {
+    agg.method = 'api';
+    let page = agg.startPage;
+    let d = data;
+    try {
+      while (aggActive) {
+        if (agg.totalPages == null) {
+          agg.totalPages = d.pagination?.total_pages ?? null;
+          agg.totalEntries = d.pagination?.total_entries ?? null;
+        }
+        const added = ingest(d.items.map(fromApi), page);
+        if (added) agg.pagesDone++; // a page with nothing new (past the last page) doesn't count
+        await saveAgg();
+        if (!aggActive || !added || agg.pagesDone >= agg.maxPages || (agg.totalPages && page >= agg.totalPages) || agg.items.length >= AGG_MAX_ITEMS) break;
+        page++;
+        await sleep(800 + Math.random() * 700); // paced, so it reads like someone paging through
+        if (!aggActive) break;
+        d = await apiPage(params, page).catch(async (e) => {
+          if (!/HTTP 429/.test(e.message)) throw e;
+          await sleep(6000); // rate-limited: wait once, then try again
+          return apiPage(params, page);
+        });
+      }
+      if (aggActive) await aggFinish('done');
+    } catch (e) {
+      if (aggActive) await aggFinish('done', `Stopped early: page ${page} failed to load (${e.message || e}).`);
+    }
+  }
+
+  /* --- stepping through the page buttons --- */
+
+  /** Every listing in the grid on screen. */
+  function harvestDom() {
+    const out = [];
+    for (const cell of document.querySelectorAll(site.item)) {
+      const a = cell.querySelector('a[href*="/items/"]');
+      const id = a && itemIdOf(a.getAttribute('href'));
+      if (!id) continue;
+      // the link's title reads "Wax jacket, brand: Barbour, condition: Very good, size: M, £45.00, …"
+      const attr = a.getAttribute('title') || '';
+      const field = (k) => (attr.match(new RegExp(`(?:^|,)\\s*${k}:\\s*([^,]+)`, 'i')) || [])[1]?.trim() || '';
+      const text = (sel) => cell.querySelector(sel)?.textContent.trim() || '';
+      const sub = text('[data-testid$="--description-subtitle"]').split(/\s*·\s*/);
+      const priceText = text('[data-testid$="--price-text"]') || (attr.match(/[£$€]\s?\d[\d.,]*|\d[\d.,]*\s?(?:€|zł|kr|Kč|Ft|lei)/) || [])[0] || '';
+      const img = cell.querySelector('img');
+      out.push({
+        id,
+        url: new URL(a.getAttribute('href'), location.href).href,
+        title: attr.split(/,\s*[\p{L} ]+:/u)[0].trim() || img?.alt || '',
+        brandName: text(site.label) || field('brand'),
+        size: field('size') || sub[0] || '',
+        condition: field('condition') || sub[1] || '',
+        price: parseAmount(cleanPrice(priceText)),
+        total: NaN,
+        currency: currencyOf(priceText),
+        photo: img?.currentSrc || img?.src || '',
+        favourites: null,
+        views: null,
+      });
+    }
+    return out;
+  }
+
+  async function waitUntil(test, ms) {
+    for (const end = Date.now() + ms; Date.now() < end; await sleep(200)) if (test()) return true;
+    return !!test();
+  }
+
+  /** Waits for a grid that differs from `prev` and has stopped changing; returns its listing ids. */
+  async function waitForGrid(prev) {
+    let last = '';
+    let stable = 0;
+    for (let t = 0; t < 60; t++) {
+      const ids = gridIds();
+      const key = ids.join(',');
+      const fresh = ids.length > 0 && (!prev || ids.some((id) => !prev.has(id)));
+      if (fresh && key === last) {
+        if (++stable >= 2) return ids;
+      } else stable = 0;
+      last = key;
+      await sleep(250);
+    }
+    return gridIds();
+  }
+
+  /** The control that goes to the next page: a link to page N+1, a "next" button, or failing those, the address itself. */
+  function findNext() {
+    const want = String(currentPage() + 1);
+    const links = [...document.querySelectorAll('a[href]')].filter((a) => {
+      if (a.closest(site.item)) return false;
+      try {
+        const u = new URL(a.href);
+        return u.pathname === location.pathname && u.searchParams.get('page') === want;
+      } catch {
+        return false;
+      }
+    });
+    const el =
+      links.find((a) => /next/i.test(`${a.getAttribute('rel') || ''} ${a.getAttribute('aria-label') || ''} ${a.dataset.testid || ''}`)) || links[0];
+    if (el) return { el, href: el.href };
+    const btn = [...document.querySelectorAll('nav button, [data-testid*="pagination" i] button, [class*="pagination" i] button')].find(
+      (b) => !b.disabled && b.getAttribute('aria-disabled') !== 'true' && /next|›|→|»/i.test(`${b.getAttribute('aria-label') || ''} ${b.dataset.testid || ''} ${b.textContent}`),
+    );
+    if (btn) return { el: btn, href: null };
+    if (agg.totalPages && Number(want) > agg.totalPages) return null;
+    const u = new URL(location.href);
+    u.searchParams.set('page', want);
+    return { el: null, href: u.href };
+  }
+
+  async function runWalker() {
+    agg.method = 'pages';
+    let prev = null;
+    try {
+      while (aggActive) {
+        const ids = await waitForGrid(prev);
+        if (!aggActive) return;
+        const added = ingest(harvestDom(), currentPage());
+        if (added) agg.pagesDone++; // a page with nothing new (past the last page) doesn't count
+        await saveAgg();
+        if (!aggActive || !ids.length || !added || agg.pagesDone >= agg.maxPages || agg.items.length >= AGG_MAX_ITEMS) break;
+        const next = findNext();
+        if (!next) break;
+        prev = new Set(ids);
+        await sleep(700 + Math.random() * 600);
+        if (!aggActive) return;
+        if (!next.el) {
+          location.assign(next.href); // full page load: the script restarts and resumes from RUN_KEY
+          return;
+        }
+        const before = location.href;
+        next.el.click();
+        // a client-side navigation keeps this script running; a full page load restarts it, and it resumes
+        const moved = await waitUntil(() => location.href !== before || gridIds().some((id) => !prev.has(id)), 8000);
+        if (!moved) {
+          if (next.href) {
+            location.assign(next.href);
+            return;
+          }
+          throw new Error("the next page didn't load");
+        }
+      }
+      if (aggActive) await aggFinish('done');
+    } catch (e) {
+      if (aggActive) await aggFinish('done', `Stopped early: ${e.message || e}.`);
+    }
+  }
+
+  async function aggStart(msg) {
+    if (aggActive) return aggStatus();
+    if (!aggSupported()) return { ...aggStatus(), error: 'Open a Vinted search or catalogue page first.' };
+    aggActive = true;
+    agg = {
+      v: 1,
+      id: Date.now(),
+      site: site.name,
+      origin: location.origin,
+      startUrl: location.href,
+      query: queryLabel(),
+      method: null,
+      status: 'running',
+      startPage: currentPage(),
+      maxPages: Math.max(1, Math.min(AGG_MAX_PAGES, Number(msg.pages) || 10)),
+      pagesDone: 0,
+      totalPages: null,
+      totalEntries: null,
+      tabId: msg.tabId ?? null,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      error: null,
+      items: [],
+    };
+    aggIds = new Set();
+    await saveAgg();
+    const first = msg.method === 'pages' ? null : await apiFirstPage();
+    if (first) runApi(first);
+    else {
+      agg.method = 'pages';
+      try {
+        sessionStorage.setItem(RUN_KEY, String(agg.id));
+      } catch {
+        /* without sessionStorage a full page load ends the run; client-side navigation still works */
+      }
+      runWalker();
+    }
+    return aggStatus();
+  }
+
+  async function aggStop() {
+    if (aggActive) return aggFinish('stopped');
+    // a page-button run between page loads, not yet resumed here
+    const got = (await api.storage.local.get(AGG_KEY))[AGG_KEY];
+    if (got?.status === 'running') {
+      agg = got;
+      await aggFinish('stopped');
+    }
+  }
+
+  /** After a full page load, carry on a page-button run started in this tab. */
+  async function aggResume() {
+    let id = null;
+    try {
+      id = sessionStorage.getItem(RUN_KEY);
+    } catch {
+      return;
+    }
+    if (!id) return;
+    const got = (await api.storage.local.get(AGG_KEY))[AGG_KEY];
+    if (!got || String(got.id) !== id || got.status !== 'running' || got.method !== 'pages') {
+      sessionStorage.removeItem(RUN_KEY);
+      return;
+    }
+    agg = got;
+    aggIds = new Set(got.items.map((i) => i.id));
+    aggActive = true;
+    runWalker();
+  }
+
   api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'mi-page') sendResponse(summary());
     else if (msg?.type === 'mi-reveal') sendResponse(reveal(msg.id));
     else if (msg?.type === 'mi-filter') {
       filter.min = Math.max(0, Math.min(100, Number(msg.min) || 0));
       filter.unrated = !!msg.unrated;
+      if ('sort' in msg) filter.sort = !!msg.sort;
       applyFilter();
       sendResponse(summary());
+    } else if (msg?.type === 'mi-agg-start') {
+      aggStart(msg).then(sendResponse);
+      return true; // async response
+    } else if (msg?.type === 'mi-agg-stop') {
+      aggStop().then(() => sendResponse(aggStatus()));
+      return true;
     }
-    else return false;
     return false;
   });
 
@@ -670,5 +1093,6 @@
     scan();
     applyFilter();
     observer.observe(document.body, { childList: true, subtree: true });
+    aggResume();
   });
 })();

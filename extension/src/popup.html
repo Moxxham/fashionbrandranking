@@ -45,6 +45,8 @@
       .seg button { all: unset; padding: 3px 8px; font-size: 12px; cursor: pointer; color: #3a3834; }
       .seg button[aria-pressed='true'] { background: #161514; color: #f4f2ed; }
       .seg button:focus-visible { outline: 2px solid #161514; }
+      select { height: 30px; padding: 0 6px; border: 1px solid #dcd7cd; background: #fbfaf7; font: inherit; color: inherit; }
+      select:focus { outline: none; border-color: #161514; }
     </style>
   </head>
   <body>
@@ -67,13 +69,43 @@
         </div>
         <input type="range" id="filter-min" min="40" max="85" step="1" value="40" aria-label="Hide listings scoring below" />
         <label id="filter-unrated-row" hidden><input type="checkbox" id="filter-unrated" /> Also hide brands not in the index</label>
+        <label><input type="checkbox" id="filter-sort" /> Sort this page by score, best first</label>
         <div class="hint" id="filter-note">For this page only: reloading or closing the tab shows everything again.</div>
       </div>
       <div class="head" style="margin-top: 10px">
         <span class="muted">Spotlight listings scoring</span>
         <div class="seg" role="group" aria-label="Spotlight" id="spotlight"></div>
       </div>
-      <div class="hint">Brands rank by their best deal score where a listing shows its RRP, otherwise by index score. Spotlight outlines listings at or above the score, here and as more load. A filled tick means the brand still has a listing showing; brands whose listings are all hidden (by the filter, or by the site's own filters) are greyed out. Click a brand to jump to its listings.</div>
+      <div class="hint">Brands rank by their best deal score where a listing shows its RRP, otherwise by index score. Spotlight outlines listings at or above the score, here and as more load. Sorting moves the best-scoring listings to the top of the grid (Vinted). A filled tick means the brand still has a listing showing; brands whose listings are all hidden (by the filter, or by the site's own filters) are greyed out. Click a brand to jump to its listings.</div>
+    </section>
+
+    <section id="agg" hidden>
+      <div class="head">
+        <h2>Scan several pages</h2>
+        <span class="muted" id="agg-count"></span>
+      </div>
+      <div id="agg-controls">
+        <div class="row" style="align-items: center; margin-top: 2px">
+          <span>Scan</span>
+          <select id="agg-pages" aria-label="Pages to scan">
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
+          <span style="flex: 1">pages from here</span>
+          <button id="agg-start" type="button">Scan</button>
+        </div>
+        <label style="font-size: 12px"><input type="checkbox" id="agg-buttons" /> Click through the page buttons in this tab</label>
+      </div>
+      <div class="status" id="agg-status"></div>
+      <div class="err" id="agg-error" hidden></div>
+      <div class="row">
+        <button id="agg-stop" class="ghost" type="button" hidden>Stop</button>
+        <button id="agg-open" class="ghost" type="button" hidden>Open results</button>
+      </div>
+      <div class="hint">Collects every listing from this search, page after page, into one list. There you can filter by score, price, size and condition, compare brands, find steals (priced well below that brand's going rate in the scan), and save listings. By default it reads the pages in the background. Tick the box to have it click the page buttons in this tab instead; it does this anyway if the background read fails. Leave the tab open while it scans.</div>
     </section>
 
     <section>
