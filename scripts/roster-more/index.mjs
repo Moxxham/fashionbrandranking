@@ -12,5 +12,6 @@ import b07 from './07-accessories.mjs';
 import b08 from './08-world.mjs';
 import b09 from './09-japan.mjs';
 import b10 from './10-designers-vintage-stores.mjs';
+import b11 from './11-niche-boots-sport-basics.mjs';
 
-export const MORE = [...b01, ...b02, ...b03, ...b04, ...b05, ...b06, ...b07, ...b08, ...b09, ...b10];
+export const MORE = [...b01, ...b02, ...b03, ...b04, ...b05, ...b06, ...b07, ...b08, ...b09, ...b10, ...b11];
