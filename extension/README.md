@@ -52,9 +52,9 @@ npm run extension:build    # writes extension/dist/chrome and extension/dist/fir
 | Part | File | What it does |
 |---|---|---|
 | Data | `public/extension.json` | Compact lookup (about 370 KB, 90 KB gzipped) written by the generator: id, name, aliases, score, rank, tier, buy-at threshold, eight dimension scores, discipline, provisional flag |
-| Sync | `src/background.js` | Seeds from the copy bundled at build time (and again after an update whenever the bundled copy is newer than what is stored), then refreshes daily from `<site>/extension.json`; an older published file never replaces newer data (a static file on Cloudflare Pages, so nothing to run or pay for). "Sync now" is in the popup |
+| Sync | `src/background.js` | Seeds from the copy bundled at build time (and again after an update whenever the bundled copy is newer than what is stored), then refreshes daily from the `public/extension.json` published in the public GitHub repo (`raw.githubusercontent.com`), so every push updates installed extensions within a day; the address is `DATA_URL` in `src/background.js` and `src/popup.js`, and can be changed in the popup; an older published file never replaces newer data (a static file on Cloudflare Pages, so nothing to run or pay for). "Sync now" is in the popup |
 | Overlay | `src/content.js` | Matches brand names, injects badges in shadow DOM so site CSS can't affect them, and watches for infinite-scroll cards with a MutationObserver |
-| Settings | `src/popup.html` | Brands on this page, filter, sort, spotlight, scan several pages, data status, Sync now, per-site switches, provisional brands on/off, and the site address |
+| Settings | `src/popup.html` | Brands on this page, filter, sort, spotlight, scan several pages, data status, Sync now, per-site switches, provisional brands on/off, the site address for badge links, and the data file address |
 | Results | `src/results.html` | The listings from a multi-page scan: Listings, Brands, Steals and Saved views, filters, CSV export |
 
 **Matching.** Names are folded (case, accents, apostrophes, full stops, "&"/"and") and checked against catalogue names plus aliases from `scripts/aliases.mjs`. A card's brand is read, in order of reliability, from:
@@ -96,13 +96,13 @@ Resale listings (Vinted, Grailed, most of eBay) have no RRP. Estimating one woul
 
 ## Before publishing
 
-- **Sync needs a deployed site.** Until the site is live at the address in the popup, sync fails with "couldn’t reach …" and badges keep using the bundled data, which is as current as the last `npm run extension:build`.
-- **Set the site address.** The default is `https://menswear-index.pages.dev`, from the README's deploy command. If your Pages project has another address, change `DEFAULTS.endpoint` in `src/background.js`, `src/popup.js` and `DEFAULT_SITE` in `src/content.js`. Users can also change it in the popup.
-- **CORS.** `public/_headers` serves `/extension.json` with `Access-Control-Allow-Origin: *`, which lets the extension fetch it with no host permissions.
+- **Data comes from GitHub.** Sync reads `public/extension.json` from the public repo, which GitHub serves with `Access-Control-Allow-Origin: *`. It only needs the repo to stay public and the file to be committed after `npm run data:generate`. If sync fails, badges keep using the bundled data, which is as current as the last `npm run extension:build`.
+- **Set the site address** (for badge links). The default is `https://menswear-index.pages.dev`, from the README's deploy command. If your Pages project has another address, change `DEFAULTS.endpoint` in `src/background.js`, `src/popup.js` and `DEFAULT_SITE` in `src/content.js`. Users can also change it in the popup.
+- **CORS.** If the data file is moved to the Pages site, `public/_headers` serves `/extension.json` with `Access-Control-Allow-Origin: *`, which lets the extension fetch it with no host permissions.
 - **Test status (October 2026):**
   - Vinted, live: one badge per listing.
   - SSENSE, on its real page markup: 46 of 46 cards badged; all 9 sale items got the correct verdict and deal score, and full-price items scored as 0% off.
   - eBay, Yoox and Farfetch block automated browsers, so they were tested on mocked grids served at their real addresses. Their selectors are best-effort until checked on the live sites.
   - Grailed renders listings in the browser, so its markup couldn't be captured; it relies on the generic matching.
   - Firefox is untested.
-- **Store listing.** Chrome Web Store and Firefox Add-ons require zipping the build folders and writing a privacy note. The extension collects nothing and sends nothing; it only downloads `extension.json`.
+- **Store listing.** Chrome Web Store and Firefox Add-ons require zipping the build folders and writing a privacy note. The extension collects nothing and sends nothing; it only downloads `extension.json` from GitHub.

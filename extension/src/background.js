@@ -1,15 +1,18 @@
 /* Menswear Index — background (MV3 service worker in Chrome, event page in Firefox).
  *
  * Keeps the brand lookup in storage.local: seeded from the copy bundled with
- * the extension on install, then refreshed daily from <site>/extension.json,
- * a static file on Cloudflare Pages, so there is no API to run or pay for.
+ * the extension on install, then refreshed daily from the extension.json
+ * published in the public GitHub repo (or another data address set in the
+ * popup), a static file, so there is no API to run or pay for.
  */
 const api = globalThis.browser ?? globalThis.chrome;
 const DATA_KEY = 'mi-data';
 const STATUS_KEY = 'mi-status';
 const SETTINGS_KEY = 'mi-settings';
 const ALARM = 'mi-daily-sync';
-const DEFAULTS = { endpoint: 'https://menswear-index.pages.dev', enabled: true, showProvisional: false, sites: {}, spotlight: 0 };
+// the data file is the one published in the public GitHub repo, refreshed with every push; the site address is for badge links
+const DATA_URL = 'https://raw.githubusercontent.com/Moxxham/fashionbrandranking/main/public/extension.json';
+const DEFAULTS = { endpoint: 'https://menswear-index.pages.dev', dataUrl: DATA_URL, enabled: true, showProvisional: false, sites: {}, spotlight: 0 };
 
 const valid = (d) => d && d.v === 1 && Array.isArray(d.brands) && d.brands.length > 100 && Array.isArray(d.brands[0]) && Array.isArray(d.dimensions);
 
@@ -35,8 +38,8 @@ async function seedFromBundle() {
 }
 
 async function sync() {
-  const { endpoint } = await settings();
-  const url = `${endpoint.replace(/\/+$/, '')}/extension.json`;
+  const { dataUrl } = await settings();
+  const url = dataUrl || DATA_URL;
   const prev = (await api.storage.local.get(STATUS_KEY))[STATUS_KEY] || {};
   try {
     const res = await fetch(url, { cache: 'no-cache' });

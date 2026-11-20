@@ -1,7 +1,8 @@
 const api = globalThis.browser ?? globalThis.chrome;
 const SETTINGS_KEY = 'mi-settings';
 const STATUS_KEY = 'mi-status';
-const DEFAULTS = { endpoint: 'https://menswear-index.pages.dev', enabled: true, showProvisional: false, sites: {}, spotlight: 0 };
+const DATA_URL = 'https://raw.githubusercontent.com/Moxxham/fashionbrandranking/main/public/extension.json';
+const DEFAULTS = { endpoint: 'https://menswear-index.pages.dev', dataUrl: DATA_URL, enabled: true, showProvisional: false, sites: {}, spotlight: 0 };
 const SITES = [
   ['vinted', 'Vinted'],
   ['ssense', 'SSENSE'],
@@ -304,6 +305,19 @@ async function init() {
     await patch({ endpoint: v });
     $('save').textContent = 'Saved';
     setTimeout(() => ($('save').textContent = 'Save'), 1200);
+  });
+  $('data-url').value = s.dataUrl || DATA_URL;
+  $('save-data').addEventListener('click', async () => {
+    const v = $('data-url').value.trim() || DATA_URL;
+    if (!/^https:\/\/[^/\s]+\/.+\.json$/.test(v)) {
+      $('error').hidden = false;
+      $('error').textContent = 'Enter the address of a .json file, starting https://';
+      return;
+    }
+    $('data-url').value = v;
+    await patch({ dataUrl: v });
+    $('save-data').textContent = 'Saved';
+    setTimeout(() => ($('save-data').textContent = 'Save'), 1200);
   });
   $('sync').addEventListener('click', async () => {
     $('sync').disabled = true;
