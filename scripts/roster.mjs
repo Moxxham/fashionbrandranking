@@ -10,7 +10,8 @@
  * composite shrinks them toward the prior (see METHODOLOGY.md §2.2).
  * founded / city are null where not confidently known — never guessed.
  */
-export const ROSTER = [
+import { MORE } from './roster-more/index.mjs';
+const BASE = [
   // Tailoring & shirting
   ['Huntsman', 'GB', 'London', 1849, 'tailoring', 'atelier', [93, 94, 78, 93, 62, 90, 88, 60], 'Single-button hacking jacket | House tweed programme', 'Savile Row house known for a structured, single-button silhouette and its own tweed designs.'],
   ['Henry Poole & Co', 'GB', 'London', 1806, 'tailoring', 'atelier', [93, 95, 74, 94, 66, 94, 90, 62], 'Bespoke dinner suit | Livery and ceremonial dress', 'The founding house of Savile Row, credited with early dinner-jacket commissions and still cutting fully bespoke.'],
@@ -2211,3 +2212,6 @@ export const ROSTER = [
   ['Wear London', 'ZZ', null, null, 'contemporary', 'mainstream', [52, 52, 52, 52, 64, 48, 54, 46], '', 'Label stocked in TK Maxx UK menswear. Little public information exists, so its scores are provisional placeholders.', 0.5],
   ['DG’S Drifter', 'ZZ', null, null, 'contemporary', 'mainstream', [52, 52, 52, 52, 64, 48, 54, 46], '', 'Label stocked in TK Maxx UK menswear. Little public information exists, so its scores are provisional placeholders.', 0.5],
 ];
+
+// Expansion batches (scripts/roster-more/), same row format, appended after the original roster.
+export const ROSTER = [...BASE, ...MORE];
