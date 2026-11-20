@@ -47,7 +47,7 @@ node scripts/generate-brands.mjs --input my-brands.ndjson --strict
 node scripts/generate-brands.mjs --format ndjson --out dist-data/brands.ndjson
 ```
 
-**Every record is a real brand.** There is no synthetic or placeholder generation. Both the generator and the app reject any record marked `provenance: "generated"`. The catalogue currently holds **2,203 brands**; the app was designed and tested for 2,000+. It grows by adding rows to `scripts/roster.mjs` or by ingesting files.
+**Every record is a real brand.** There is no synthetic or placeholder generation. Both the generator and the app reject any record marked `provenance: "generated"`. The catalogue currently holds **3,987 brands**, and the app is tested at that size. It grows by adding rows to `scripts/roster.mjs` or to a themed batch file in `scripts/roster-more/`, or by ingesting files. Run `node scripts/check-roster.mjs` before generating: it flags exact and likely duplicates ("Acne" against "Acne Studios", or a known alias) and bad fields, such as a country code the generator doesn't know.
 
 The pipeline combines three record sources, attaches stockist flags, and validates and scores records in batches (`--batch`, default 100):
 
@@ -74,5 +74,5 @@ A Manifest V3 extension for Chrome and Firefox shows each brand's score, tier an
 
 - One `useMemo` pass handles search, facet counts and filtering over the whole catalogue. `useDeferredValue` keeps typing responsive.
 - **Fuzzy search:** prefix and word matching, bounded Damerau-Levenshtein for typos ("andersen shepard" → Anderson & Sheppard), subsequence matching, diacritic folding, and AND semantics across query tokens.
-- **Leaderboard:** window-virtualised with fixed 64 px rows and revealed 25 at a time, so only about 20 DOM rows exist however large the catalogue grows (tested at 2,000).
+- **Leaderboard:** window-virtualised with fixed 64 px rows and revealed 25 at a time, so only about 20 DOM rows exist however large the catalogue grows (tested at 3,987, where the first render takes under a second).
 - Bookmarks, the personal tier list (S/A/B/C) and hidden disciplines live in `localStorage`, sync across tabs, and fail safe when storage is unavailable. Hiding a discipline removes its brands from the ranking on this device only; ranks keep their catalogue-wide numbers.

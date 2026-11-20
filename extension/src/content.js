@@ -118,10 +118,13 @@
   // Brand names that are also everyday words: matched only where the page labels
   // the text as a brand, never by scanning card text or listing titles.
   const COMMON = new Set(
-    'on next gap head hope folk lee arena element elements baker money industry spin noir reason valor faded malibu helium hera apollo curated cos mango market wilson rebel legends closed frame closure sunflower blend hunter champion express theory crew vince coach guess bench animal patrick rhythm insight former quasi hockey hype luke mida berna premise fawn reserved'.split(
+    'on next gap head hope folk lee arena element elements baker money industry spin noir reason valor faded malibu helium hera apollo curated cos mango market wilson rebel legends closed frame closure sunflower blend hunter champion express theory crew vince coach guess bench animal patrick rhythm insight former quasi hockey hype luke mida berna premise fawn reserved ale antigua antler armada atoms bark barracuda bather beams bianco blenders boast bodega bonsai brokers buff calibre castro challenger chapeau cherokee chums commas commoners copa cyclone date diverse doppler druids fanatics flexi frau fulton furor gerry gilbert giro gotcha grasshoppers grinders held henderson herringbone highlander holden homage hydrogen icicle incarnation ingram janus kipling knox laredo lexington lumberjack madness madras mains merlin monos morrison myths outil oxbow painkiller parkside pedro peerless pistil planks pronounce quay ramsey reef richards rifle roadster roar royalties rusty sibling silhouette skins snipe snitch stafford swims think topper troubadour tween unrecorded velour victoria westbury woodland zephyr blackstone barrett saddlebred hathaway holloway dobbs delong bowen'.split(
       ' ',
     ),
   );
+  // multi-word names that are also everyday phrases
+  for (const p of ['being human', 'hot topic', 'plan b', 'first ascent', 'junk food', 'family first', 'free country', 'the executive', 'outdoor products', 'sense of place', 'wild country', 'five ten', 'more mile', 'mad rock', 'fresh service', 'retro brand', 'far afield', 'native youth', 'town team', 'blue marble', 'blue industry', 'la paz'])
+    COMMON.add(p);
 
   let index = new Map(); // folded name/alias -> brand
   let settings = { enabled: true, showProvisional: false, sites: {}, endpoint: DEFAULT_SITE, spotlight: 0 };
