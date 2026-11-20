@@ -18,13 +18,20 @@ async function settings() {
   return { ...DEFAULTS, ...(got[SETTINGS_KEY] || {}) };
 }
 
+const newer = (a, b) => Date.parse(a?.generatedAt || 0) > Date.parse(b?.generatedAt || 0);
+
+/** Use the copy bundled with the extension when storage is empty or holds older data (e.g. after an update). */
 async function seedFromBundle() {
-  const got = await api.storage.local.get(DATA_KEY);
-  if (valid(got[DATA_KEY])) return;
+  const got = await api.storage.local.get([DATA_KEY, STATUS_KEY]);
   const res = await fetch(api.runtime.getURL('data/brands.json'));
   const data = await res.json();
   if (!valid(data)) return;
-  await api.storage.local.set({ [DATA_KEY]: data, [STATUS_KEY]: { source: 'bundled', count: data.brands.length, generatedAt: data.generatedAt, syncedAt: null } });
+  if (valid(got[DATA_KEY]) && !newer(data, got[DATA_KEY])) return;
+  const prev = got[STATUS_KEY] || {};
+  await api.storage.local.set({
+    [DATA_KEY]: data,
+    [STATUS_KEY]: { source: 'bundled', count: data.brands.length, generatedAt: data.generatedAt, syncedAt: null, lastError: prev.lastError, lastAttempt: prev.lastAttempt, url: prev.url },
+  });
 }
 
 async function sync() {
@@ -36,14 +43,23 @@ async function sync() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!valid(data)) throw new Error('unexpected data format');
+    // never replace newer data (e.g. a freshly bundled copy) with an older published file
+    const cur = (await api.storage.local.get(DATA_KEY))[DATA_KEY];
+    if (valid(cur) && newer(cur, data)) {
+      await api.storage.local.set({ [STATUS_KEY]: { ...prev, lastError: null, lastAttempt: Date.now(), checkedAt: Date.now(), url } });
+      return { ok: true, count: cur.brands.length, older: true };
+    }
     await api.storage.local.set({
       [DATA_KEY]: data,
       [STATUS_KEY]: { source: 'remote', count: data.brands.length, generatedAt: data.generatedAt, syncedAt: Date.now(), url },
     });
     return { ok: true, count: data.brands.length };
   } catch (e) {
-    await api.storage.local.set({ [STATUS_KEY]: { ...prev, lastError: String(e.message || e), lastAttempt: Date.now(), url } });
-    return { ok: false, error: String(e.message || e) };
+    // fetch() reports DNS failures, offline and CORS problems all as a bare TypeError ("Failed to fetch")
+    const host = new URL(url).host;
+    const error = e instanceof TypeError ? `couldn’t reach ${host}. Check the site is deployed at that address.` : String(e.message || e);
+    await api.storage.local.set({ [STATUS_KEY]: { ...prev, lastError: error, lastAttempt: Date.now(), url } });
+    return { ok: false, error };
   }
 }
 

@@ -34,7 +34,7 @@ async function renderStatus() {
     return;
   }
   const built = st.generatedAt ? new Date(st.generatedAt).toLocaleDateString('en-GB') : 'unknown';
-  $('status').textContent = `${(st.count || 0).toLocaleString('en-GB')} brands · data from ${built} · ${st.source === 'remote' ? `synced ${ago(st.syncedAt)}` : 'bundled copy (not yet synced)'}`;
+  $('status').textContent = `${(st.count || 0).toLocaleString('en-GB')} brands · data from ${built} · ${st.source === 'remote' ? `synced ${ago(st.syncedAt)}` : st.checkedAt ? `bundled copy, newer than the site’s (checked ${ago(st.checkedAt)})` : 'bundled copy (not yet synced)'}`;
   const err = st.lastError && (!st.syncedAt || st.lastAttempt > st.syncedAt);
   $('error').hidden = !err;
   if (err) $('error').textContent = `Last sync failed: ${st.lastError}`;

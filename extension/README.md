@@ -52,7 +52,7 @@ npm run extension:build    # writes extension/dist/chrome and extension/dist/fir
 | Part | File | What it does |
 |---|---|---|
 | Data | `public/extension.json` | Compact lookup (about 370 KB, 90 KB gzipped) written by the generator: id, name, aliases, score, rank, tier, buy-at threshold, eight dimension scores, discipline, provisional flag |
-| Sync | `src/background.js` | Seeds from the copy bundled at build time, then refreshes daily from `<site>/extension.json` (a static file on Cloudflare Pages, so nothing to run or pay for). "Sync now" is in the popup |
+| Sync | `src/background.js` | Seeds from the copy bundled at build time (and again after an update whenever the bundled copy is newer than what is stored), then refreshes daily from `<site>/extension.json`; an older published file never replaces newer data (a static file on Cloudflare Pages, so nothing to run or pay for). "Sync now" is in the popup |
 | Overlay | `src/content.js` | Matches brand names, injects badges in shadow DOM so site CSS can't affect them, and watches for infinite-scroll cards with a MutationObserver |
 | Settings | `src/popup.html` | Brands on this page, filter, sort, spotlight, scan several pages, data status, Sync now, per-site switches, provisional brands on/off, and the site address |
 | Results | `src/results.html` | The listings from a multi-page scan: Listings, Brands, Steals and Saved views, filters, CSV export |
@@ -96,6 +96,7 @@ Resale listings (Vinted, Grailed, most of eBay) have no RRP. Estimating one woul
 
 ## Before publishing
 
+- **Sync needs a deployed site.** Until the site is live at the address in the popup, sync fails with "couldn’t reach …" and badges keep using the bundled data, which is as current as the last `npm run extension:build`.
 - **Set the site address.** The default is `https://menswear-index.pages.dev`, from the README's deploy command. If your Pages project has another address, change `DEFAULTS.endpoint` in `src/background.js`, `src/popup.js` and `DEFAULT_SITE` in `src/content.js`. Users can also change it in the popup.
 - **CORS.** `public/_headers` serves `/extension.json` with `Access-Control-Allow-Origin: *`, which lets the extension fetch it with no host permissions.
 - **Test status (October 2026):**
