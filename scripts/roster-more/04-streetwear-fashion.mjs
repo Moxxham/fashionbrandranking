@@ -56,7 +56,7 @@ export default [
   ['Sulvam', 'JP', 'Tokyo', null, 'designer', 'luxury', [76, 76, 80, 72, 48, 58, 70, 50], 'Exposed-seam tailoring', 'Teppei Fujita’s Tokyo label of deconstructed tailoring.', 0.7],
   ['Taakk', 'JP', null, null, 'designer', 'premium', [74, 72, 78, 70, 50, 52, 68, 50], 'Jacquard-gradient knits', 'Japanese label known for intricate textiles.', 0.7],
   ['Kidill', 'JP', 'Tokyo', null, 'designer', 'premium', [68, 66, 78, 64, 50, 54, 64, 48], 'Punk-inspired designer pieces', 'Tokyo label with a punk sensibility.', 0.7],
-  ['Stein', 'JP', 'Tokyo', null, 'designer', 'premium', [80, 76, 76, 76, 54, 60, 74, 52], 'Oversized wool coats', 'Tokyo label of oversized, softly constructed clothing.', 0.7],
+  ['ssstein', 'JP', 'Tokyo', null, 'designer', 'premium', [80, 76, 76, 76, 54, 60, 74, 52], 'Oversized wool coats', 'Tokyo label of oversized, softly constructed clothing.', 0.7],
   ['Fumito Ganryu', 'JP', 'Tokyo', null, 'designer', 'luxury', [76, 76, 82, 72, 46, 60, 70, 50], 'Technical conceptual clothing', 'Former Comme des Garçons designer’s own Tokyo label.', 0.7],
   ['Kanemasa Phil', 'JP', null, null, 'knitwear', 'premium', [80, 78, 66, 78, 60, 54, 76, 54], 'Fine-gauge knit jersey shirts', 'Japanese jersey and knitwear maker.', 0.7],
   ['Bedwin & the Heartbreakers', 'JP', 'Tokyo', null, 'streetwear', 'premium', [68, 66, 70, 66, 56, 56, 66, 48], 'Americana streetwear', 'Tokyo label mixing Americana and rock references.', 0.7],
