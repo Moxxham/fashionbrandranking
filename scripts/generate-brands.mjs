@@ -74,7 +74,7 @@ const COUNTRIES = {
   GG: 'Guernsey', AT: 'Austria', FI: 'Finland', IN: 'India', NZ: 'New Zealand', TR: 'Turkey', IS: 'Iceland', BR: 'Brazil', SK: 'Slovakia', ID: 'Indonesia', TW: 'Taiwan', CN: 'China',
   PL: 'Poland', CZ: 'Czechia', MX: 'Mexico', AR: 'Argentina', CO: 'Colombia', PE: 'Peru', IL: 'Israel', ZA: 'South Africa', NG: 'Nigeria', SG: 'Singapore',
   GR: 'Greece', LV: 'Latvia', LT: 'Lithuania', EE: 'Estonia', UA: 'Ukraine', TH: 'Thailand', PH: 'Philippines', VN: 'Vietnam', MA: 'Morocco', KE: 'Kenya', GH: 'Ghana', CL: 'Chile', UY: 'Uruguay',
-  LK: 'Sri Lanka', PK: 'Pakistan', MY: 'Malaysia', AE: 'United Arab Emirates', JM: 'Jamaica', BG: 'Bulgaria', RS: 'Serbia', SI: 'Slovenia', HR: 'Croatia', LU: 'Luxembourg', MC: 'Monaco', ZW: 'Zimbabwe', EG: 'Egypt', TN: 'Tunisia', SN: 'Senegal',
+  LK: 'Sri Lanka', PK: 'Pakistan', MY: 'Malaysia', AE: 'United Arab Emirates', JM: 'Jamaica', BG: 'Bulgaria', RS: 'Serbia', SI: 'Slovenia', HR: 'Croatia', LU: 'Luxembourg', MC: 'Monaco', ZW: 'Zimbabwe', EG: 'Egypt', TN: 'Tunisia', SN: 'Senegal', RU: 'Russia', GE: 'Georgia', LB: 'Lebanon', QA: 'Qatar', SA: 'Saudi Arabia',
   ZZ: 'Origin unknown', // ISO user-assigned code: brands whose origin isn't confidently known
 };
 

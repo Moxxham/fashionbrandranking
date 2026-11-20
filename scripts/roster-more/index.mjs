@@ -5,5 +5,6 @@
 import b01 from './01-tailoring-cloth.mjs';
 import b02 from './02-footwear.mjs';
 import b03 from './03-outdoor-sport-work.mjs';
+import b04 from './04-streetwear-fashion.mjs';
 
-export const MORE = [...b01, ...b02, ...b03];
+export const MORE = [...b01, ...b02, ...b03, ...b04];
